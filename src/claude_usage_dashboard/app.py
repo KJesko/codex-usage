@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -40,6 +41,19 @@ VERSION = "0.1.0"
 # 5h-block token limit for the quota bar: "auto" (largest prior block) or a number.
 # Set from the --token-limit CLI flag in main().
 TOKEN_LIMIT_ARG = "auto"
+
+# Optional plan preset (--plan). Maps to approximate per-plan 5h caps of
+# input+output (non-cache) tokens — the closest analog to Anthropic's opaque,
+# message-based limits. These are rough community estimates (post-2026-05-06
+# doubling), Pro-anchored with the official 5x / 20x tier multipliers; prefer an
+# explicit --token-limit for accuracy.
+PLAN_ARG = None
+PLAN_LIMITS = {"pro": 44_000, "max5": 220_000, "max20": 880_000}
+
+# Snapshot warehouse: a tiny local SQLite that accumulates daily aggregates so the
+# time-series/cost/model charts survive Claude's ~30-day log cleanup.
+HISTORY_DB = Path.home() / ".claude" / "usage-dashboard.db"
+ENABLE_HISTORY = True
 
 # --------------------------------------------------------------------------- #
 # ccusage invocation
@@ -239,6 +253,85 @@ def _accumulate(bucket: dict, row: dict) -> None:
     bucket["cacheReadTokens"] += row.get("cacheReadTokens", 0) or 0
 
 
+# --------------------------------------------------------------------------- #
+# Snapshot warehouse (SQLite) — best-effort; never breaks the dashboard
+# --------------------------------------------------------------------------- #
+
+def _history_connect():
+    HISTORY_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(HISTORY_DB), timeout=5)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS daily(
+            period TEXT PRIMARY KEY,
+            input_tokens INTEGER, output_tokens INTEGER,
+            cache_creation INTEGER, cache_read INTEGER,
+            total_tokens INTEGER, cost REAL,
+            models_json TEXT, updated_at TEXT)"""
+    )
+    return conn
+
+
+def _history_upsert(daily: list) -> None:
+    """Persist each day's aggregate (upsert on period)."""
+    if not ENABLE_HISTORY or not daily:
+        return
+    try:
+        conn = _history_connect()
+        with conn:
+            for d in daily:
+                conn.execute(
+                    """INSERT INTO daily(period,input_tokens,output_tokens,cache_creation,
+                         cache_read,total_tokens,cost,models_json,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT(period) DO UPDATE SET
+                         input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
+                         cache_creation=excluded.cache_creation, cache_read=excluded.cache_read,
+                         total_tokens=excluded.total_tokens, cost=excluded.cost,
+                         models_json=excluded.models_json, updated_at=excluded.updated_at""",
+                    (d.get("period"), d.get("inputTokens", 0) or 0, d.get("outputTokens", 0) or 0,
+                     d.get("cacheCreationTokens", 0) or 0, d.get("cacheReadTokens", 0) or 0,
+                     d.get("totalTokens", 0) or 0, d.get("totalCost", 0) or 0,
+                     json.dumps(d.get("modelBreakdowns", [])),
+                     datetime.now(timezone.utc).isoformat()),
+                )
+        conn.close()
+    except sqlite3.Error:
+        pass  # warehouse is best-effort
+
+
+def _history_read(since: Optional[str], until: Optional[str]) -> dict:
+    """Return {period: daily-shaped dict} from the warehouse for the range."""
+    if not ENABLE_HISTORY:
+        return {}
+    try:
+        conn = _history_connect()
+        q = ("SELECT period,input_tokens,output_tokens,cache_creation,cache_read,"
+             "total_tokens,cost,models_json FROM daily")
+        clauses, params = [], []
+        if since:
+            clauses.append("REPLACE(period,'-','') >= ?"); params.append(since)
+        if until:
+            clauses.append("REPLACE(period,'-','') <= ?"); params.append(until)
+        if clauses:
+            q += " WHERE " + " AND ".join(clauses)
+        rows = conn.execute(q, params).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return {}
+    out = {}
+    for r in rows:
+        try:
+            mb = json.loads(r[7]) if r[7] else []
+        except (ValueError, TypeError):
+            mb = []
+        out[r[0]] = {
+            "period": r[0], "inputTokens": r[1], "outputTokens": r[2],
+            "cacheCreationTokens": r[3], "cacheReadTokens": r[4],
+            "totalTokens": r[5], "totalCost": r[6], "modelBreakdowns": mb,
+        }
+    return out
+
+
 def build_payload(since: Optional[str] = None, until: Optional[str] = None) -> dict:
     daily_raw = _run_ccusage("daily", since, until)
     session_raw = _run_ccusage("session", since, until)
@@ -246,6 +339,29 @@ def build_payload(since: Optional[str] = None, until: Optional[str] = None) -> d
 
     daily = daily_raw.get("daily", [])
     totals = daily_raw.get("totals", {})
+
+    # --- snapshot warehouse: persist the full snapshot, then merge in any
+    # history that predates ccusage's ~30-day window (fresh days always win) ---
+    if since is None and until is None:
+        _history_upsert(daily)
+    ccusage_periods = {d.get("period") for d in daily}
+    hist = _history_read(since, until)
+    history_days = 0
+    if hist:
+        merged = dict(hist)
+        for d in daily:
+            merged[d.get("period")] = d
+        daily = [merged[p] for p in sorted(merged)]
+        history_days = sum(1 for p in merged if p not in ccusage_periods)
+        t = _empty_bucket()
+        for d in daily:
+            _accumulate(t, {**d, "cost": d.get("totalCost", 0)})
+        totals = {
+            "inputTokens": t["inputTokens"], "outputTokens": t["outputTokens"],
+            "cacheCreationTokens": t["cacheCreationTokens"],
+            "cacheReadTokens": t["cacheReadTokens"],
+            "totalTokens": t["totalTokens"], "totalCost": t["cost"],
+        }
 
     # Aggregate cost/tokens by model across all days.
     models = {}
@@ -306,6 +422,7 @@ def build_payload(since: Optional[str] = None, until: Optional[str] = None) -> d
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "since": since,
         "until": until,
+        "historyDays": history_days,
         "totals": totals,
         "daily": daily,
         "models": models_list,
@@ -324,13 +441,17 @@ def _resolve_token_limit(blocks: list) -> tuple:
     """
     arg = (TOKEN_LIMIT_ARG or "auto").strip().lower()
     if arg.isdigit() and int(arg) > 0:
-        return int(arg), "manual"
+        return int(arg), "manual", "total"
+    plan = (PLAN_ARG or "").strip().lower()
+    if plan in PLAN_LIMITS:
+        # plan caps are message-scale estimates → measure non-cache tokens
+        return PLAN_LIMITS[plan], f"plan {plan} · ≈ est (in+out)", "noncache"
     prior = [b.get("totalTokens", 0) or 0 for b in blocks
              if not b.get("isActive") and not b.get("isGap")]
     prior = [t for t in prior if t > 0]
     if prior:
-        return max(prior), "auto · largest prior 5h block"
-    return None, "n/a · no prior blocks yet"
+        return max(prior), "auto · largest prior 5h block", "total"
+    return None, "n/a · no prior blocks yet", "total"
 
 
 def build_active_block() -> dict:
@@ -346,24 +467,32 @@ def build_active_block() -> dict:
     proj = b.get("projection") or {}
     total = b.get("totalTokens", 0) or 0
 
-    limit, source = _resolve_token_limit(blocks)
+    limit, source, metric = _resolve_token_limit(blocks)
     limit_info = None
     if limit and limit > 0:
         tpm = burn.get("tokensPerMinute") or 0
         remaining_min = proj.get("remainingMinutes")
         proj_total = proj.get("totalTokens") or 0
-        minutes_to_limit = (limit - total) / tpm if (total < limit and tpm > 0) else None
-        will_exceed = (proj_total > limit) or (
+        noncache = (tc.get("inputTokens", 0) or 0) + (tc.get("outputTokens", 0) or 0)
+        if metric == "noncache":
+            ratio = (noncache / total) if total else 0
+            used, projected, burn_pm = noncache, proj_total * ratio, tpm * ratio
+        else:
+            used, projected, burn_pm = total, proj_total, tpm
+        minutes_to_limit = (limit - used) / burn_pm if (used < limit and burn_pm > 0) else None
+        will_exceed = (projected > limit) or (
             minutes_to_limit is not None and remaining_min is not None
             and minutes_to_limit <= remaining_min)
         limit_info = {
             "limit": limit,
             "source": source,
-            "usedPct": total / limit * 100,
-            "projectedPct": (proj_total / limit * 100) if proj_total else None,
+            "metric": metric,
+            "used": used,
+            "usedPct": used / limit * 100,
+            "projectedPct": (projected / limit * 100) if projected else None,
             "minutesToLimit": minutes_to_limit,
             "willExceedBeforeReset": bool(will_exceed),
-            "alreadyOver": total >= limit,
+            "alreadyOver": used >= limit,
         }
 
     return {"block": {
@@ -749,8 +878,11 @@ function render(d){
   document.getElementById('updated').textContent =
     'updated ' + new Date(d.generatedAt).toLocaleTimeString();
   const days = d.daily.map(x=>x.period);
-  if(days.length) document.getElementById('range').textContent =
-    days[0] + '  →  ' + days[days.length-1];
+  if(days.length){
+    let r = days[0] + '  →  ' + days[days.length-1];
+    if(d.historyDays>0) r += '  · +' + d.historyDays + 'd from history';
+    document.getElementById('range').textContent = r;
+  }
 
   const t = d.totals || {};
   const overallHit = hitRate(t).toFixed(1);
@@ -872,7 +1004,7 @@ function renderBlock(resp){
         :lim.usedPct>=70?'#d29922':'#3fb950';
     document.getElementById('blkLimitLabel').innerHTML=
       'Plan limit <span class="muted">('+esc(lim.source)+')</span> — '
-      +compact(b.totalTokens)+' / '+compact(lim.limit)+' ('+lim.usedPct.toFixed(0)+'%)';
+      +compact(lim.used)+' / '+compact(lim.limit)+' ('+lim.usedPct.toFixed(0)+'%)';
     let txt, warn=true;
     if(lim.alreadyOver){ txt='⚠ over limit this block'; }
     else if(lim.willExceedBeforeReset && lim.minutesToLimit!=null){
@@ -992,12 +1124,19 @@ def main():
     ap.add_argument("--token-limit", default="auto",
                     help="5h-block token limit for the quota bar: a number "
                          "(e.g. 88000000) or 'auto' = largest prior block (default)")
+    ap.add_argument("--plan", choices=["pro", "max5", "max20"], default=None,
+                    help="Approximate per-plan 5h caps (input+output tokens) for the "
+                         "quota bar. Rough estimates — prefer --token-limit for accuracy.")
+    ap.add_argument("--no-history", action="store_true",
+                    help="Disable the local snapshot warehouse (SQLite history).")
     ap.add_argument("--version", action="version",
                     version=f"claude-usage-dashboard {VERSION}")
     args = ap.parse_args()
 
-    global TOKEN_LIMIT_ARG
+    global TOKEN_LIMIT_ARG, PLAN_ARG, ENABLE_HISTORY
     TOKEN_LIMIT_ARG = args.token_limit
+    PLAN_ARG = args.plan
+    ENABLE_HISTORY = not args.no_history
     CACHE.ttl = args.ttl
     url = f"http://{args.host}:{args.port}"
 

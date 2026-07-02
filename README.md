@@ -35,6 +35,10 @@ and your local logs (numbers above are illustrative).</sub>
 - **Projects → sessions tree** — real project paths (from each session's logged
   `cwd`), click to expand VS Code-tab-style session names + git branch.
 - **Agent filter** — All / Claude / Codex (recomputed client-side, instant).
+- **Snapshot warehouse** — daily aggregates are saved to a local SQLite
+  (`~/.claude/usage-dashboard.db`) on each read, so the time-series / cost / model
+  charts survive Claude's ~30-day log cleanup (per-session/project detail still
+  needs the raw logs). Disable with `--no-history`.
 
 ---
 
@@ -116,6 +120,8 @@ python src/claude_usage_dashboard/app.py       # or: ./run.ps1  (Windows)
 | `--host` | `127.0.0.1` | Bind address |
 | `--ttl` | `120` | Seconds to cache the heavy `ccusage` snapshot |
 | `--token-limit` | `auto` | 5h-block token limit for the quota bar — a number (e.g. `88000000`) or `auto` (largest prior block) |
+| `--plan` | — | `pro` / `max5` / `max20` — approximate per-plan caps (input+output tokens). Rough estimates; `--token-limit` is more accurate |
+| `--no-history` | off | Disable the local snapshot warehouse |
 | `--no-browser` | off | Don't auto-open the browser |
 | `--version` | — | Print version and exit |
 
