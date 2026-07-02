@@ -37,6 +37,10 @@ from urllib.parse import urlparse, parse_qs
 
 VERSION = "0.1.0"
 
+# 5h-block token limit for the quota bar: "auto" (largest prior block) or a number.
+# Set from the --token-limit CLI flag in main().
+TOKEN_LIMIT_ARG = "auto"
+
 # --------------------------------------------------------------------------- #
 # ccusage invocation
 # --------------------------------------------------------------------------- #
@@ -310,33 +314,78 @@ def build_payload(since: Optional[str] = None, until: Optional[str] = None) -> d
     }
 
 
+def _resolve_token_limit(blocks: list) -> tuple:
+    """Determine the 5-hour-block token limit for the quota bar.
+
+    ccusage's `--token-limit` only affects its terminal display (not JSON), so we
+    compute it here. `--token-limit N` pins an explicit number; otherwise 'auto'
+    uses the largest completed prior block — the same heuristic ccusage/Maciek use
+    when the real plan cap is unknown.
+    """
+    arg = (TOKEN_LIMIT_ARG or "auto").strip().lower()
+    if arg.isdigit() and int(arg) > 0:
+        return int(arg), "manual"
+    prior = [b.get("totalTokens", 0) or 0 for b in blocks
+             if not b.get("isActive") and not b.get("isGap")]
+    prior = [t for t in prior if t > 0]
+    if prior:
+        return max(prior), "auto · largest prior 5h block"
+    return None, "n/a · no prior blocks yet"
+
+
 def build_active_block() -> dict:
-    """Return the currently-active 5-hour billing block (or {'block': None})."""
-    raw = _run_ccusage("blocks --active")
-    for b in raw.get("blocks", []):
-        if not b.get("isActive"):
-            continue
-        tc = b.get("tokenCounts", {}) or {}
-        return {"block": {
-            "id": b.get("id"),
-            "startTime": b.get("startTime"),
-            "endTime": b.get("endTime"),
-            "actualEndTime": b.get("actualEndTime"),
-            "costUSD": b.get("costUSD", 0) or 0,
-            "totalTokens": b.get("totalTokens", 0) or 0,
-            "entries": b.get("entries", 0) or 0,
-            "models": b.get("models", []) or [],
-            # normalize tokenCounts key names to match the rest of the app
-            "tokenCounts": {
-                "inputTokens": tc.get("inputTokens", 0) or 0,
-                "outputTokens": tc.get("outputTokens", 0) or 0,
-                "cacheCreationTokens": tc.get("cacheCreationInputTokens", 0) or 0,
-                "cacheReadTokens": tc.get("cacheReadInputTokens", 0) or 0,
-            },
-            "burnRate": b.get("burnRate") or {},
-            "projection": b.get("projection") or {},
-        }}
-    return {"block": None}
+    """Return the active 5-hour block with quota/limit projection (or {'block': None})."""
+    raw = _run_ccusage("blocks")  # all blocks: needed to derive the auto limit
+    blocks = raw.get("blocks", [])
+    b = next((x for x in blocks if x.get("isActive")), None)
+    if not b:
+        return {"block": None}
+
+    tc = b.get("tokenCounts", {}) or {}
+    burn = b.get("burnRate") or {}
+    proj = b.get("projection") or {}
+    total = b.get("totalTokens", 0) or 0
+
+    limit, source = _resolve_token_limit(blocks)
+    limit_info = None
+    if limit and limit > 0:
+        tpm = burn.get("tokensPerMinute") or 0
+        remaining_min = proj.get("remainingMinutes")
+        proj_total = proj.get("totalTokens") or 0
+        minutes_to_limit = (limit - total) / tpm if (total < limit and tpm > 0) else None
+        will_exceed = (proj_total > limit) or (
+            minutes_to_limit is not None and remaining_min is not None
+            and minutes_to_limit <= remaining_min)
+        limit_info = {
+            "limit": limit,
+            "source": source,
+            "usedPct": total / limit * 100,
+            "projectedPct": (proj_total / limit * 100) if proj_total else None,
+            "minutesToLimit": minutes_to_limit,
+            "willExceedBeforeReset": bool(will_exceed),
+            "alreadyOver": total >= limit,
+        }
+
+    return {"block": {
+        "id": b.get("id"),
+        "startTime": b.get("startTime"),
+        "endTime": b.get("endTime"),
+        "actualEndTime": b.get("actualEndTime"),
+        "costUSD": b.get("costUSD", 0) or 0,
+        "totalTokens": total,
+        "entries": b.get("entries", 0) or 0,
+        "models": b.get("models", []) or [],
+        # normalize tokenCounts key names to match the rest of the app
+        "tokenCounts": {
+            "inputTokens": tc.get("inputTokens", 0) or 0,
+            "outputTokens": tc.get("outputTokens", 0) or 0,
+            "cacheCreationTokens": tc.get("cacheCreationInputTokens", 0) or 0,
+            "cacheReadTokens": tc.get("cacheReadInputTokens", 0) or 0,
+        },
+        "burnRate": burn,
+        "projection": proj,
+        "limit": limit_info,
+    }}
 
 
 # --------------------------------------------------------------------------- #
@@ -507,6 +556,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
        border-radius:6px;overflow:hidden}
   .bar .fill{height:100%;background:linear-gradient(90deg,#3fb950,#d29922);width:0%;
        transition:width .5s ease}
+  .bar .limitfill{background:#3fb950;transition:width .5s ease,background .3s}
   .bar .barlabel{display:flex;justify-content:space-between;color:var(--muted);
        font-size:12px;margin-top:6px}
   .live .models{color:var(--muted);font-size:12px;margin-top:2px}
@@ -568,6 +618,10 @@ HTML_PAGE = r"""<!DOCTYPE html>
         <div class="track"><div class="fill" id="blkFill"></div></div>
         <div class="barlabel"><span id="blkElapsed"></span><span id="blkRemain"></span></div>
         <div class="models" id="blkModels"></div>
+      </div>
+      <div class="bar" id="blkLimitWrap" style="display:none">
+        <div class="barlabel"><span id="blkLimitLabel"></span><span id="blkLimitPredict"></span></div>
+        <div class="track"><div class="fill limitfill" id="blkLimitFill"></div></div>
       </div>
     </div>
   </div>
@@ -806,6 +860,29 @@ function renderBlock(resp){
   document.getElementById('blkWindow').textContent =
     hm(ws)+' – '+hm(we)+'  ('+(b.entries||0)+' entries)';
   document.getElementById('blkModels').textContent='models: '+(b.models||[]).join(', ');
+
+  // plan / limit quota bar
+  const lim=b.limit, lw=document.getElementById('blkLimitWrap');
+  if(lim && lim.limit){
+    lw.style.display='block';
+    const fill=document.getElementById('blkLimitFill');
+    fill.style.width=Math.min(100,lim.usedPct).toFixed(1)+'%';
+    fill.style.background=(lim.alreadyOver||lim.usedPct>=90)?'#f85149'
+        :lim.usedPct>=70?'#d29922':'#3fb950';
+    document.getElementById('blkLimitLabel').innerHTML=
+      'Plan limit <span class="muted">('+esc(lim.source)+')</span> — '
+      +compact(b.totalTokens)+' / '+compact(lim.limit)+' ('+lim.usedPct.toFixed(0)+'%)';
+    let txt, warn=true;
+    if(lim.alreadyOver){ txt='⚠ over limit this block'; }
+    else if(lim.willExceedBeforeReset && lim.minutesToLimit!=null){
+      txt='⚠ limit in ~'+fmtMin(lim.minutesToLimit)+' at current burn'; }
+    else if(lim.projectedPct!=null && lim.projectedPct>100){
+      txt='⚠ projected '+lim.projectedPct.toFixed(0)+'% by reset'; }
+    else { txt='✓ on pace to stay under limit'; warn=false; }
+    const pe=document.getElementById('blkLimitPredict');
+    pe.textContent=txt; pe.style.color=warn?'#f0883e':'#3fb950';
+  } else { lw.style.display='none'; }
+
   tickBlock();
 }
 async function loadBlock(force){
@@ -876,10 +953,15 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--ttl", type=int, default=120, help="data cache TTL seconds")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--token-limit", default="auto",
+                    help="5h-block token limit for the quota bar: a number "
+                         "(e.g. 88000000) or 'auto' = largest prior block (default)")
     ap.add_argument("--version", action="version",
                     version=f"claude-usage-dashboard {VERSION}")
     args = ap.parse_args()
 
+    global TOKEN_LIMIT_ARG
+    TOKEN_LIMIT_ARG = args.token_limit
     CACHE.ttl = args.ttl
     url = f"http://{args.host}:{args.port}"
     print(f"Claude Code Usage Dashboard  →  {url}")

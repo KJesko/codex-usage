@@ -27,7 +27,8 @@ and your local logs (numbers above are illustrative).</sub>
 ## What it shows
 
 - **Live 5-hour block** — cost-so-far → projected total, burn rate ($/hr · tok/min),
-  cache hit-rate, and an elapsed/remaining progress bar (polls every 20s, ticks 1s).
+  cache hit-rate, an elapsed/remaining progress bar, and a **plan-limit quota bar**
+  with *time-to-limit at current burn* (polls every 20s, ticks 1s).
 - **Summary cards** — total cost, tokens, cache hit-rate, hits vs misses, counts.
 - **Charts** — tokens/day (stacked), cost/day, cache hit-rate/day, cost by model.
 - **Date-range filter** — All time / 7 / 30 / 90 days / custom.
@@ -114,6 +115,7 @@ python src/claude_usage_dashboard/app.py       # or: ./run.ps1  (Windows)
 | `--port` | `8787` | Port to serve on |
 | `--host` | `127.0.0.1` | Bind address |
 | `--ttl` | `120` | Seconds to cache the heavy `ccusage` snapshot |
+| `--token-limit` | `auto` | 5h-block token limit for the quota bar — a number (e.g. `88000000`) or `auto` (largest prior block) |
 | `--no-browser` | off | Don't auto-open the browser |
 | `--version` | — | Print version and exit |
 
