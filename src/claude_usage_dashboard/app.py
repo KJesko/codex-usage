@@ -1000,19 +1000,22 @@ def main():
     TOKEN_LIMIT_ARG = args.token_limit
     CACHE.ttl = args.ttl
     url = f"http://{args.host}:{args.port}"
-    print(f"Claude Code Usage Dashboard  →  {url}")
-    print("Fetching first snapshot via ccusage (may take a few seconds)…")
-    try:
-        CACHE.get((None, None), lambda: build_payload(None, None), force=True)
-        print("Ready.")
-    except Exception as e:
-        print(f"WARNING: initial ccusage call failed: {e}", file=sys.stderr)
-        print("The dashboard will still start; use ↻ Refresh once ccusage works.")
 
-    if not args.no_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    def _warm():
+        # Prime the snapshot in the background so the page loads instantly
+        # (the UI shows "loading…" until this first ccusage read completes).
+        try:
+            CACHE.get((None, None), lambda: build_payload(None, None), force=True)
+            print("First snapshot ready.")
+        except Exception as e:
+            print(f"WARNING: initial ccusage call failed: {e}", file=sys.stderr)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Claude Code Usage Dashboard  →  {url}")
+    print("Serving now; the first ccusage snapshot loads in the background…")
+    threading.Thread(target=_warm, daemon=True).start()
+    if not args.no_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
