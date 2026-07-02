@@ -1,5 +1,10 @@
 # Claude Code Usage Dashboard
 
+[![CI](https://github.com/physcom/claude-usage-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/physcom/claude-usage-dashboard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
+![Zero dependencies](https://img.shields.io/badge/deps-stdlib%20only-brightgreen)
+
 A local, **zero-dependency** web dashboard for Claude Code (and Codex) token
 usage. It layers on top of [`ccusage`](https://github.com/ryoppippi/ccusage) for
 accurate per-model cost, adds a **per-project + per-session** breakdown (by
@@ -8,6 +13,11 @@ renders charts a terminal view can't.
 
 Everything runs on `127.0.0.1` and reads only your local logs — **nothing is
 uploaded anywhere**.
+
+![Claude Code Usage Dashboard — animated preview](docs/demo.svg)
+
+<sub>Animated mockup of the UI — your real dashboard renders live from `ccusage`
+and your local logs (numbers above are illustrative).</sub>
 
 > Replace `physcom` in the commands/URLs below with your own GitHub username
 > if you fork or self-host.
