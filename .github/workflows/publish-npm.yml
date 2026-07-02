@@ -1,0 +1,27 @@
+name: Publish to npm
+
+# Fires when you publish a GitHub Release (e.g. tag v0.1.0).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # enables npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Create an npm automation token and add it as the NPM_TOKEN repo secret.
+          # Remove --provenance if you are not publishing from a public repo.

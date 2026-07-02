@@ -1,0 +1,5 @@
+# Normalize all text files to LF in the repo (portable for CI / npm / PyPI).
+* text=auto eol=lf
+
+# Windows batch files must stay CRLF to run reliably.
+*.bat text eol=crlf
