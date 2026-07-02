@@ -122,6 +122,10 @@ python src/claude_usage_dashboard/app.py       # or: ./run.ps1  (Windows)
 Click **↻ Refresh** in the UI to force a fresh read (the live block has its own
 15s cache and polls independently).
 
+The **date range + agent filter live in the URL** (`?range=30&agent=claude`), so any
+view is a **bookmarkable, shareable link** — restored automatically on load. Hit the
+**🔗** button to copy the current view's link.
+
 ---
 
 ## How it works

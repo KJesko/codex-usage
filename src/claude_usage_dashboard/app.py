@@ -587,6 +587,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
     </span>
     <span class="pill" id="updated"></span>
     <button id="refresh">↻ Refresh</button>
+    <button id="copylink" title="Copy a shareable link to this exact view">🔗</button>
   </div>
 </header>
 <div class="wrap">
@@ -930,14 +931,49 @@ async function load(force){
     document.getElementById('updated').textContent = '';
   }
 }
+// ---- shareable URL state (range + agent live in the query string) ----
+function syncURL(){
+  const q=new URLSearchParams();
+  const preset=document.getElementById('preset').value;
+  const agent=document.getElementById('agent').value;
+  if(preset && preset!=='all') q.set('range',preset);
+  if(preset==='custom'){
+    const f=document.getElementById('fromDate').value, t=document.getElementById('toDate').value;
+    if(f) q.set('from',f);
+    if(t) q.set('to',t);
+  }
+  if(agent && agent!=='all') q.set('agent',agent);
+  const qs=q.toString();
+  history.replaceState(null,'',qs?('?'+qs):location.pathname);
+}
+function initFromURL(){
+  const q=new URLSearchParams(location.search);
+  if(q.get('range')) document.getElementById('preset').value=q.get('range');
+  if(q.get('agent')) document.getElementById('agent').value=q.get('agent');
+  const custom=document.getElementById('preset').value==='custom';
+  document.getElementById('customRange').style.display=custom?'inline-flex':'none';
+  if(custom){
+    if(q.get('from')) document.getElementById('fromDate').value=q.get('from');
+    if(q.get('to')) document.getElementById('toDate').value=q.get('to');
+  }
+}
+
 document.getElementById('refresh').addEventListener('click', ()=>{ load(true); loadBlock(true); });
 document.getElementById('preset').addEventListener('change', e=>{
   const custom = e.target.value==='custom';
   document.getElementById('customRange').style.display = custom?'inline-flex':'none';
+  syncURL();
   if(!custom) load(false);
 });
-document.getElementById('applyRange').addEventListener('click', ()=>load(false));
-document.getElementById('agent').addEventListener('change', renderAll);  // client-side, no refetch
+document.getElementById('applyRange').addEventListener('click', ()=>{ syncURL(); load(false); });
+document.getElementById('agent').addEventListener('change', ()=>{ syncURL(); renderAll(); });  // client-side, no refetch
+document.getElementById('copylink').addEventListener('click', async ()=>{
+  const b=document.getElementById('copylink');
+  try{ await navigator.clipboard.writeText(location.href); }catch(e){ /* address bar still has it */ }
+  const t=b.textContent; b.textContent='✓'; setTimeout(()=>{ b.textContent=t; }, 1200);
+});
+
+initFromURL();      // restore controls from a shared link before first load
 load(false);
 loadBlock(false);
 setInterval(()=>loadBlock(false), 20000);  // poll active block every 20s
