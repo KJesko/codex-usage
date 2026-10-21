@@ -1,9 +1,13 @@
 # Codex Usage
 
+简体中文 | [English](README.en.md)
+
+**稳定版 v1.2.0（网页版）**：[下载与更新说明](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0) · [更新日志](CHANGELOG.md) · [安全与隐私](SECURITY.md)
+
 [![Checks](https://github.com/KJesko/codex-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/KJesko/codex-usage/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-一个中文、优先在本地运行的 **Codex 用量看板**。按日期、项目、会话和模型查看 Token 消耗，估算 API 等价成本，记录账号额度变化，也可以通过 SSH 汇总远程机器的用量。
+一个支持简体中文 / English、优先在本地运行的 **Codex 用量看板**。按日期、项目、会话和模型查看 Token 消耗，估算 API 等价成本，记录账号额度变化，也可以通过 SSH 汇总远程机器的用量。
 
 Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器运行，并提供 Windows 桌面版构建脚本。
 
@@ -57,7 +61,17 @@ Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器�
 | 账号额度 | 通过本机 Codex 读取额度窗口、剩余比例和重置时间，保存观测历史及提醒 |
 | 多机器汇总 | 合并多个 Codex 数据目录，SSH 增量同步，断线时保留上次快照 |
 | 筛选与导出 | 日期、机器、项目、模型及账号分组筛选，导出适用于 Excel 的 UTF-8 CSV |
-| 本地体验 | 中文界面、深浅主题、窄窗口适配、键盘操作，图表支持缩放和平移 |
+| 本地体验 | 中英切换、深浅主题、窄窗口适配、键盘操作，图表支持缩放和平移 |
+
+## 安装稳定版与升级
+
+推荐从 [v1.2.0 Release](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0) 下载 `codex-usage-1.2.0-web-source.zip`，解压到固定目录。Windows 安装 Python 3.10+ 后双击 `run.bat`；macOS / Linux 按下方命令创建虚拟环境。首次联网安装依赖后，浏览器打开 `http://127.0.0.1:8787`。本次发布提供网页版源码、Python wheel / sdist 及 SHA256，不提供新桌面 exe，也不发布到 PyPI。
+
+升级前：如果启用了 Windows 自动保护，先运行 `scripts/enable-web-background.ps1 -Disable`，等待后台退出；手动启动的服务用 Ctrl+C 停止。服务停止后备份整个 `~/.codex-usage` 目录，再用新版替换源码或解压到新目录，重装依赖并启动。**不要删除用户数据目录**；本版沿用原有配置、日志索引和额度历史。已有浏览器的主题与隐藏项目设置继续保留。
+
+如改动安装目录，请在新目录运行一次 `run.ps1`，再执行 `scripts/enable-web-background.ps1` 重新启用自启。不要复制旧 `.venv`。Linux / macOS 不提供内置登录自启；服务需保持运行才能采集额度。回退时停止服务并使用原源码及升级前备份，不要让两个版本同时写同一数据目录。
+
+校验下载包：Windows 使用 `Get-FileHash 文件名 -Algorithm SHA256`；Linux 使用 `sha256sum`，macOS 使用 `shasum -a 256`，与 Release 中 `SHA256SUMS.txt` 比对。哈希用于检测传输差错，不代表代码签名。
 
 ## 快速开始
 
@@ -188,12 +202,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\enable-web-backgro
 | `~/.codex-usage/settings.json` | 数据目录、时区、价格、SSH 数据源及提醒设置 |
 | `~/.codex-usage/usage.sqlite` | 用量索引和必要会话元数据 |
 | `~/.codex-usage/quota-history.sqlite` | 额度观测、事件及提醒相关数据 |
+| `~/.codex-usage/official-prices.json` | 官方价格缓存与同步时间 |
 | `~/.codex-usage/remote/` | 远程用量快照 |
 | `~/.codex-usage/web-service/` | Windows 后台服务状态与日志 |
 
 本机索引可能包含**会话标题、项目路径和账号分组**，会话标题也可能来自首条用户消息。请勿把这些数据、真实日志、CSV 导出或未经脱敏的截图提交到公开仓库。
 
-日志不会上传至本项目的服务器。使用账号额度时由 Codex 访问其服务；启用远程同步时访问配置的 SSH 主机；查看社区预测时会请求第三方公开接口，不附带本地日志、账号或额度信息。认证凭据和可兑换的重置卡 ID 不传给网页。
+日志不会上传至本项目的服务器。使用账号额度时由 Codex 访问其服务；启用远程同步时访问配置的 SSH 主机；查看社区预测时会请求第三方公开接口，不附带本地日志、账号或额度信息。价格同步每 24 小时请求 OpenAI 官方公开价目表，新缺价模型也会主动查询；请求不携带日志、账号凭据或模型使用记录。认证凭据和可兑换的重置卡 ID 不传给网页。
 
 ## 构建 Windows 桌面版
 
@@ -236,7 +251,7 @@ src/codex_usage/
   account.py / quota_*.py    账号额度、历史、重置与提醒
   remote.py                 SSH 同步
   app.py / desktop.py       本地 HTTP 服务与桌面入口
-  static/                   中文前端
+  static/                   中英双语前端
 tests/                      Python 与 JavaScript 测试
 scripts/                    桌面资源准备与 Windows 后台服务
 packaging/                  Windows 打包配置
@@ -265,3 +280,13 @@ python -m http.server 8791 --bind 127.0.0.1 --directory dist
 `src/claude_usage_dashboard`、`.claude-plugin`、`commands/` 和 `docs/demo.svg` 为保留的上游代码或资料，不属于当前 Codex 看板的运行入口，也不代表当前界面或支持的安装方式。
 
 采用 [MIT 许可证](LICENSE)，来源及第三方说明见 [NOTICE](NOTICE)。
+
+网页版后台每 24 小时同步所有实际使用模型的官方价格，发现新缺价模型时也会主动访问 https://developers.openai.com/api/docs/pricing.md 获取适用 Standard 单价。价格页只展示已使用模型；缺价行可点击“从官方获取”。官方未公布则继续待补价。自定义单价优先；官方暂未公布的模型每天自动重试，所有请求至少间隔 60 秒；检查时间与价格持久保存到 official-prices.json，服务关闭期间到期的检查在下次启动补做。
+
+### 界面语言 / Display language
+
+网页版顶部栏可选择简体中文或 English。语言选择保存在当前浏览器，刷新或重新打开后继续生效；切换保留当前路由与筛选条件，不修改项目名称、会话标题、模型标识或原始数据。语言设置不改变统计时区和价格计算方式。
+
+Choose 简体中文 or English in the web app's top bar. The preference is saved in this browser. Switching language retains the current route and filters. Project names, session titles and raw data are unchanged; reporting time zone and pricing calculations remain the same.
+
+英文文案集中维护在 `src/codex_usage/locales/en.json`。`web_i18n.py` 为受信任的界面资源生成英文版本，仅翻译 API 中应用自身的提示字段。新增中文界面文案应同时添加英文条目；覆盖测试会检查遗漏和英文脚本语法。

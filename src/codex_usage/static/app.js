@@ -275,8 +275,16 @@ function sessionView() {
 function modelTable(rows) {
   return `<div class="table-scroll"><table class="data-table"><thead><tr><th>模型</th><th class="num">总 Tokens</th><th class="num">未缓存输入</th><th class="num">缓存读取</th><th class="num">输出</th><th class="num">API 等价</th></tr></thead><tbody>${rows.map(m=>`<tr><td><strong>${esc(m.name)}</strong>${m.unpriced_events?'<small>待配置价格</small>':''}</td><td class="num">${number(m.total)}</td><td class="num">${number(m.uncached)}</td><td class="num">${number(m.cached)}</td><td class="num">${number(m.output)}</td><td class="num cost">${costLabel(m)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-cell">暂无模型用量</td></tr>'}</tbody></table></div>`;
 }
+let priceFetchMessage='';
+function pricingSyncPanel() {
+  const sync=data.pricing.sync;
+  if(!sync)return '';
+  const time=at=>at?new Date(at*1000).toLocaleString('zh-CN',{timeZone:data.timezone,hour12:false}):'尚未检查';
+  const missing=data.pricing.missing_models||[];
+  return `<section class="panel price-spacer"><div class="panel-head"><h2>模型价格同步</h2><span class="badge">${sync.busy?'正在查询官方':missing.length?`${missing.length} 个模型待补价`:'已使用模型价格齐全'}</span></div><div class="settings-body"><p>每 24 小时同步已使用模型的官方价格，发现缺价模型时自动查询。</p><dl class="price-sync-grid"><dt>最近定时检查</dt><dd>${esc(time(sync.last_check))}</dd><dt>下次定时同步</dt><dd>${esc(time(sync.next_check))}</dd></dl>${sync.error?`<p role="status">${esc(sync.error)}</p>`:''}${priceFetchMessage?`<p role="status">${esc(priceFetchMessage)}</p>`:''}<p data-help>只展示所有本地及已同步日志中实际使用的模型，不受日期筛选影响。缺价可点击“从官方获取”。官方尚未公布适用价格时仍保留待补价，不猜测单价。手动查询间隔至少 60 秒。自定义单价优先；已有官方价格每 24 小时更新。缺价自动查询失败或官方未公布时，每个模型最多每日自动重试一次。</p></div></section>`;
+}
 function pricingView() {
-  return `<div class="notice">${icon('info')}<div><strong>如果同样的 Token 通过 API 使用，会花多少钱？</strong><br>默认按当前 Standard API 单价计算。历史用量也使用此价格快照，不是历史账单重建；Codex 的订阅费、Fast / Ultrafast 加价、地区附加费和工具调用费不包含在内。</div></div><section class="panel"><div class="table-toolbar"><h2>模型单价</h2><span class="badge">USD / 百万 tokens</span></div><div class="table-scroll"><table class="data-table"><thead><tr><th>模型</th><th class="num">未缓存输入</th><th class="num">缓存读取</th><th class="num">缓存写入</th><th class="num">输出</th><th>来源</th></tr></thead><tbody>${Object.entries(data.pricing.models).map(([name,p])=>`<tr><td>${esc(name)}</td>${['input','cached','write','output'].map(k=>`<td class="num">${esc('$'+p[k])}</td>`).join('')}<td>${data.pricing.overrides.includes(name)?'<span class="badge neutral">自定义</span>':`<a href="https://developers.openai.com/api/docs/models/${encodeURIComponent(name)}" target="_blank" rel="noreferrer">官方 ↗</a>`}</td></tr>`).join('')}</tbody></table></div><div class="formula">等价 USD =（未缓存输入 × 输入价 + 缓存读取 × 缓存价 + 缓存写入 × 写入价 + 输出 × 输出价）/ 1,000,000</div><div class="price-source">官方价格核对于 ${data.pricing.verified_at} · <a href="${esc(data.pricing.source)}" target="_blank" rel="noreferrer">查看官方价目表 ↗</a><br>适用模型的单次输入超过 272,000 tokens 时，输入 / 缓存价 × 2，输出价 × 1.5。按日志中的单次请求长度判断。GPT-5.6 Sol 当前为促销价，官方注明至少持续至 2026-11-21。</div></section><section class="panel price-spacer"><div class="panel-head"><h2>添加或覆盖模型单价</h2></div><div class="settings-body"><p data-help class="subtle">保存后立即重算历史用量；单价仅保存在本机。长上下文阈值留空表示不启用倍率。</p><form id="priceForm" class="price-form"><label class="model-field"><span>模型名称</span><input name="name" required placeholder="例如 gpt-6.1-sol" list="priceModels"></label><datalist id="priceModels">${data.options.models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${[['input','输入价'],['cached','缓存读取价'],['write','缓存写入价'],['output','输出价']].map(([key,label])=>`<label><span>${label}</span><input name="${key}" type="number" min="0" step="any" required placeholder="$/M"></label>`).join('')}<label><span>长上下文阈值</span><input name="long_context" type="number" min="1" step="1" placeholder="272000"></label><button class="button primary" type="submit">保存价格</button></form>${data.pricing.overrides.length?`<div class="inset-note" data-help-keep>自定义模型：${data.pricing.overrides.map(name=>`<button class="text-button" data-reset-price="${esc(name)}">${esc(name)} · 恢复默认</button>`).join('')}</div>`:''}</div></section>`;
+  return pricingSyncPanel()+`<div class="notice">${icon('info')}<div><strong>如果同样的 Token 通过 API 使用，会花多少钱？</strong><br>默认按当前 Standard API 单价计算。历史用量也使用此价格快照，不是历史账单重建；Codex 的订阅费、Fast / Ultrafast 加价、地区附加费和工具调用费不包含在内。</div></div><section class="panel"><div class="table-toolbar"><h2>已使用模型单价</h2><span class="badge">USD / 百万 tokens</span></div><div class="table-scroll"><table class="data-table"><thead><tr><th>模型</th><th class="num">未缓存输入</th><th class="num">缓存读取</th><th class="num">缓存写入</th><th class="num">输出</th><th>来源</th></tr></thead><tbody>${Object.entries(data.pricing.models).map(([name,p])=>`<tr><td>${esc(name)}</td>${['input','cached','write','output'].map(k=>`<td class="num">${p[k]==null?'—':esc('$'+p[k])}</td>`).join('')}<td>${(data.pricing.missing_models||[]).includes(name)?`<button class="button small" data-fetch-price="${esc(name)}" ${data.pricing.sync?.busy?'disabled':''}>从官方获取</button><span>${data.pricing.sync?.missing?.includes(name) && data.pricing.sync?.last_success && !data.pricing.sync?.busy && !data.pricing.sync?.error?' 官方暂无适用单价':' 待补价'}</span>`:data.pricing.overrides.includes(name)?'<span class="badge neutral">自定义</span>':`<a href="https://developers.openai.com/api/docs/models/${encodeURIComponent(name)}" target="_blank" rel="noreferrer">官方 ↗</a>`}</td></tr>`).join('')}</tbody></table></div><div class="formula">等价 USD =（未缓存输入 × 输入价 + 缓存读取 × 缓存价 + 缓存写入 × 写入价 + 输出 × 输出价）/ 1,000,000</div><div class="price-source">官方价格核对于 ${data.pricing.verified_at} · <a href="${esc(data.pricing.source)}" target="_blank" rel="noreferrer">查看官方价目表 ↗</a><br>长上下文按官方对应档位计价，按日志中的单次请求长度判断；完整档位可打开官方价目表查看。仅查询缺失价格，自定义价格保持优先。</div></section><section class="panel price-spacer"><div class="panel-head"><h2>添加或覆盖模型单价</h2></div><div class="settings-body"><p data-help class="subtle">保存后立即重算历史用量；单价仅保存在本机。长上下文阈值留空表示不启用倍率。</p><form id="priceForm" class="price-form"><label class="model-field"><span>模型名称</span><input name="name" required placeholder="例如 gpt-6.1-sol" list="priceModels"></label><datalist id="priceModels">${data.options.models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${[['input','输入价'],['cached','缓存读取价'],['write','缓存写入价'],['output','输出价']].map(([key,label])=>`<label><span>${label}</span><input name="${key}" type="number" min="0" step="any" required placeholder="$/M"></label>`).join('')}<label><span>长上下文阈值</span><input name="long_context" type="number" min="1" step="1" placeholder="272000"></label><button class="button primary" type="submit">保存价格</button></form>${data.pricing.overrides.length?`<div class="inset-note" data-help-keep>自定义模型：${data.pricing.overrides.map(name=>`<button class="text-button" data-reset-price="${esc(name)}">${esc(name)} · 恢复默认</button>`).join('')}</div>`:''}</div></section>`;
 }
 let backgroundStatus=null,backgroundBusy=false,backgroundReading=false,backgroundError='';
 function backgroundPanel(){
@@ -647,7 +655,7 @@ function renderAccount() {
   const refreshFocused = document.activeElement?.id === 'refreshAccount';
   const quotaScroll = $('accountQuota').scrollTop;
   $('accountQuota').innerHTML=`<div class="account-heading"><h2 id="accountQuotaTitle">当前 Codex 账号</h2><button id="refreshAccount" class="icon-button" aria-label="刷新账号额度" title="刷新账号额度" ${q.busy?'disabled':''}>${icon('refresh')}</button></div><p class="account-footnote">${esc(planName||'套餐未知')} · ${status}</p><button class="button" data-view="quota" popovertarget="accountQuota" popovertargetaction="hide">查看额度与重置 →</button>`;
-  $('accountStatus').innerHTML=`<span class="account-state ${old?'is-stale':''}"><i></i>${status}</span><span class="quota-updated" title="${q.fetched_at?'更新于 '+accountTime(q.fetched_at):''}">${q.fetched_at?accountTime(q.fetched_at).split(' ').pop()+' 更新':''}</span>`;
+  $('accountStatus').innerHTML=`<span class="account-state ${old?'is-stale':''}"><i></i>${status}</span><span class="quota-updated" title="${q.fetched_at?'更新于 '+accountTime(q.fetched_at):''}">${q.fetched_at?new Date(q.fetched_at).toLocaleTimeString('zh-CN',{timeZone:settings?.timezone || 'America/Los_Angeles',hour:'2-digit',minute:'2-digit',hour12:false})+' 更新':''}</span>`;
   if (refreshFocused) $('refreshAccount').focus({preventScroll:true});
   $('accountQuota').scrollTop = quotaScroll;
   positionQuotaPopover();
@@ -687,3 +695,21 @@ $('accountQuota').addEventListener('toggle',e=>{
 });
 window.addEventListener('resize',positionQuotaPopover);
 document.addEventListener('scroll',positionQuotaPopover,true);
+
+setInterval(()=>{if(!document.hidden && state.view==='pricing' && ![...document.querySelectorAll('#priceForm input')].some(input=>input.value || input===document.activeElement) && !document.querySelector('#content details[open]'))load();},60000);
+
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-fetch-price]');
+  if(!button||button.disabled)return;
+  button.disabled=true;button.textContent='查询中…';
+  try{
+    await api('/api/pricing/fetch',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':settings.csrf},body:JSON.stringify({model:button.dataset.fetchPrice})});
+    priceFetchMessage='已提交查询；官方未公布的价格仍保留待补价。';
+    await load();
+    for(let i=0;i<20 && (i===0 || data.pricing.sync?.busy);i++){
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      if(state.view!=='pricing' || document.querySelector('#priceForm input:focus') || [...document.querySelectorAll('#priceForm input')].some(input=>input.value))break;
+      await load();
+    }
+  }catch(error){priceFetchMessage=error.message;if(state.view==='pricing')render();}
+});

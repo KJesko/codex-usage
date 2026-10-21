@@ -5,6 +5,7 @@ from PyInstaller.utils.hooks import collect_data_files
 root = Path(SPECPATH)
 data = collect_data_files('tzdata') + [
     (str(root / 'src/codex_usage/static'), 'codex_usage/static'),
+    (str(root / 'src/codex_usage/locales'), 'codex_usage/locales'),
     (str(root / 'src/codex_usage/prices.json'), 'codex_usage'),
     (str(root / 'src/codex_usage/reader.py'), 'codex_usage'),
     (str(root / 'src/codex_usage/remote_collector.txt'), 'codex_usage'),

@@ -268,7 +268,14 @@ test('generated site uses subdirectory-safe assets and includes no server data',
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   assert.ok(html.includes('全部数据由浏览器生成'));assert.doesNotMatch(html,/(?:href|src)="\/(?!\/)/);
   assert.ok(html.indexOf('demo-bridge.js')<html.indexOf('src="./app.js?'));
-  for(const name of fs.readdirSync(root))assert.ok(/\.(?:html|js|css|svg)$/.test(name)||name==='.nojekyll');
+  for(const dir of [root,path.join(root,'en')])for(const name of fs.readdirSync(dir)){
+    if(dir===root&&name==='en')continue;
+    assert.ok(/\.(?:html|js|css|svg)$/.test(name)||name==='.nojekyll');
+    assert.ok(!/sqlite|jsonl|auth|settings\.json/i.test(name));
+  }
+  const english=fs.readFileSync(path.join(root,'en/index.html'),'utf8');
+  assert.match(english,/lang="en-US"/);assert.match(english,/All data is simulated/i);
+  assert.match(english,/data-demo-root="\.\.\/"/);
   const assets=[...html.matchAll(/(?:href|src)="\.\/([^"?]+)\?v=([a-f0-9]{12})"/g)];
   assert.ok(assets.length>10);
   for(const match of assets){

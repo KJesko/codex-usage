@@ -99,7 +99,7 @@ def report(snapshot, query, config, now=None):
     for event in events:
         if any(query.get(k) and query[k] != event[k] for k in ("project", "model", "session", "account", "source")):
             continue
-        e = {**event, **estimate(event, config.get("prices"))}
+        e = {**event, **estimate(event, config.get("prices"), config.get("_catalog"))}
         dimension_events.append(e)
         day = utc_time(e["at"]).astimezone(zone).date()
         if day == today:
@@ -168,8 +168,8 @@ def report(snapshot, query, config, now=None):
         "usage_start": {"date": config["usage_since"], "timezone": config["timezone"],
                         "at": cutoff.isoformat()} if cutoff else None,
         "range": {"since": actual_start.isoformat(), "until": end.isoformat(), "today": today.isoformat(), "grain": grain},
-        "pricing": {"verified_at": CATALOG["verified_at"], "source": CATALOG["source"],
-                    "basis": CATALOG["basis"], "unknown_models": sorted(unknown),
-                    "models": {**CATALOG["models"], **config.get("prices", {})},
+        "pricing": {"verified_at": config.get("_catalog", CATALOG)["verified_at"], "source": config.get("_catalog", CATALOG)["source"],
+                    "basis": config.get("_catalog", CATALOG)["basis"], "unknown_models": sorted(unknown),
+                    "models": {**config.get("_catalog", CATALOG)["models"], **config.get("prices", {})},
                     "overrides": sorted(config.get("prices", {}))},
     }

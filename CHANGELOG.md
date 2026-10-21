@@ -1,7 +1,39 @@
 # Changelog
 
-All notable changes to this project are documented here. This project follows
-[Semantic Versioning](https://semver.org/).
+## 1.2.0 — 2026-10-21
+
+Stable **web/source** release. No new desktop executable and no PyPI publication.
+
+### Added / 新增
+
+- Simplified Chinese / English switching in the top bar, persisted per browser. English navigation, chart labels, forms, help and application status messages; raw project names and session content remain unchanged.
+- English README, English synthetic demo, installation and upgrade guidance, and security reporting guidance.
+- Official pricing synchronization for models with usage history every 24 hours. New missing prices trigger an early query; missing models also retain a manual fetch button.
+- Persistent hidden projects in the treemap, individual restore controls and Restore all.
+
+### Improved / 改进
+
+- Only used models appear in Pricing & billing. Custom prices take precedence; failed fetches preserve previous rates. Unknown or unsupported prices are never treated as zero.
+- All historical API-equivalent costs use the latest configured prices. These are reference estimates, not historical invoices.
+- English month labels and accessible controls; fixed the sidebar update time under English locale.
+- Added locale resources to packaging, bilingual demo checks and translation-coverage tests.
+- Manual price polling no longer refreshes over an in-progress custom-price draft.
+
+### Existing capabilities included / 本版包含
+
+Interactive usage/model/quota charts; annual activity heatmap; project and session drill-down; CSV export; SSH multi-machine aggregation; locally persisted quota observations, reset classifications and collection gaps; Windows source-web startup and crash recovery controls.
+
+### Upgrade / 升级
+
+Stop the service (disable its Windows supervisor first), back up `~/.codex-usage`, replace the source and reinstall dependencies. Keep the user-data directory. Re-register Windows startup if the source path changed. See [中文安装说明](README.md#安装稳定版与升级) or [English upgrade instructions](README.en.md#upgrade-safely).
+
+### Known limits / 已知边界
+
+- Live quota depends on the installed Codex CLI, login and upstream availability. Sleep, shutdown and network outages leave observation gaps.
+- Automatic startup controls require a Windows source installation, not the wheel-only installation.
+- Official pricing documentation may change format. Failed or unsupported updates retain cached prices and show status; manual price overrides remain available.
+- Reset causes and third-party forecasts are estimates. No reset operation is performed by this app.
+- No telemetry or project-hosted log upload; local indexes and CSV files can still contain private metadata and require careful handling.
 
 ## [1.1.0] — 2026-10-21
 

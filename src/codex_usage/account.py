@@ -185,7 +185,7 @@ def normalize_quota(limits):
 
 
 def initialize(rpc):
-    rpc.call('initialize', {'clientInfo': {'name': 'codex_usage', 'title': 'Codex Usage', 'version': '1.1.0'}})
+    rpc.call('initialize', {'clientInfo': {'name': 'codex_usage', 'title': 'Codex Usage', 'version': '1.2.0'}})
     rpc.send({'method': 'initialized', 'params': {}})
 
 
