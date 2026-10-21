@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# Node
+node_modules/
+npm-debug.log*
+*.tgz
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Local scratch (not part of the package)
+tool-results/
+scratchpad/
+
+# Private usage / test artifacts must never be committed.
+*.sqlite*
+*.jsonl
+settings.json
+.test-output/
+.coverage
+htmlcov/
+
+# Credentials, local data directories, and exported reports
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
+.codex/
+.codex-usage/
+exports/

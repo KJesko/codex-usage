@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-usage-local"
+version = "1.1.0"
+description = "Local Codex token dashboard with daily, weekly, project, session and API-equivalent cost reports"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = ["tzdata==2026.5"]
+keywords = ["codex", "tokens", "usage", "dashboard", "cost"]
+
+[project.urls]
+Homepage = "https://github.com/KJesko/codex-usage"
+Repository = "https://github.com/KJesko/codex-usage"
+Issues = "https://github.com/KJesko/codex-usage/issues"
+
+[project.optional-dependencies]
+desktop = ["pywebview==6.2.1"]
+
+[project.scripts]
+codex-usage = "codex_usage.app:main"
+
+[project.gui-scripts]
+codex-usage-desktop = "codex_usage.desktop:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codex_usage"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/codex_usage", "/README.md", "/LICENSE", "/NOTICE", "/requirements*.txt", "/tests", "/codex_usage*.py", "/run.ps1", "/run.bat", "/build-windows.ps1", "/CodexUsage.spec", "/packaging", "/scripts"]

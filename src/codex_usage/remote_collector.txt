@@ -1,0 +1,46 @@
+# Runs in memory on the selected SSH host, after the shared reader definitions.
+# No remote installs, cache files, credentials, messages or tool outputs.
+def collect_remote(request):
+    root = Path(request.get('path') or os.environ.get('CODEX_HOME') or '~/.codex').expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError('Codex directory does not exist: ' + str(root))
+    metadata, issues = read_metadata(root)
+    paths = {str(p.resolve()) for folder in ('sessions', 'archived_sessions')
+             for p in (root / folder).rglob('*.jsonl')}
+    for item in metadata.values():
+        path = item.get('rollout_path')
+        if path and Path(path).suffix == '.jsonl' and Path(path).is_file():
+            paths.add(str(Path(path).resolve()))
+    projects = {}
+    def project(cwd):
+        if cwd not in projects:
+            projects[cwd] = project_path(cwd)
+        return projects[cwd]
+    clean_metadata = {}
+    for sid, item in metadata.items():
+        clean_metadata[sid] = {k: item[k] for k in ('id', 'title', 'cwd', 'account', 'tokens_used') if k in item}
+        clean_metadata[sid]['project_root'] = project(item.get('cwd', ''))
+    files = {}
+    known = request.get('known', {})
+    for name in sorted(paths):
+        try:
+            path = Path(name)
+            stat = path.stat()
+            signature = [stat.st_size, stat.st_mtime_ns, CACHE_VERSION]
+            entry = {'signature': signature}
+            if known.get(name) != signature:
+                data = read_log(path)
+                for event in data['events']:
+                    event['project_root'] = project(event['cwd'] or data['meta']['cwd'])
+                entry['data'] = data
+            files[name] = entry
+        except (OSError, ValueError) as exc:
+            issues.append('Cannot read log: ' + path.name)
+    return {'version': 1, 'root': str(root), 'metadata': clean_metadata,
+            'files': files, 'issues': issues}
+
+try:
+    print(json.dumps(collect_remote(REQUEST), ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({'error': str(exc)}, ensure_ascii=False))
+    raise SystemExit(1)

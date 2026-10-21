@@ -1,0 +1,28 @@
+Codex Usage is a customized fork of:
+https://github.com/physcom/claude-usage-dashboard
+Upstream snapshot: f3473a332123e810363bdcc43dd991a5c7c2cb1f
+Upstream copyright: Copyright (c) 2026 physcom
+License: MIT (see LICENSE)
+
+The local HTTP serving structure, thread-safe TTL cache and source launchers
+are adapted from upstream. Original upstream code remains under
+src/claude_usage_dashboard for provenance, but is not used or packaged by the
+new application. Codex ingestion, deduplication, timezone analytics, pricing,
+Chinese UI, exports, settings and tests are new custom implementations.
+
+Official price references, checked 2026-10-15:
+https://developers.openai.com/api/docs/pricing
+https://developers.openai.com/api/docs/models/gpt-6-astra
+https://developers.openai.com/api/docs/models/gpt-6.1-sol
+https://developers.openai.com/api/docs/models/gpt-6-sol
+https://developers.openai.com/api/docs/models/gpt-6-luna
+https://developers.openai.com/api/docs/models/gpt-5.6-sol
+https://developers.openai.com/api/docs/models/gpt-5.6-luna
+https://developers.openai.com/api/docs/models/gpt-5.5
+https://developers.openai.com/api/docs/guides/prompt-caching
+
+GPT-5.6 Terra pricing added and checked 2026-10-16:
+https://developers.openai.com/api/docs/models/gpt-5.6-terra
+Standard USD / 1M tokens: input 2.00, cached input 0.20,
+cache writes 2.50, output 12.00. Requests above 272,000 input
+tokens use 2x input/cache rates and 1.5x output rates.
