@@ -25,25 +25,36 @@ const DemoData = (() => {
     const models=['gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-5.3-codex'];
     const tasks=['实现搜索与筛选','修复边界条件','补充单元测试','优化缓存策略','整理接口文档','重构数据访问层','打磨响应式界面','分析性能瓶颈'];
     const events=[];
-    const base=Date.parse(iso(now).slice(0,10)+'T00:00:00Z');
-    for(let ago=364;ago>=0;ago--){
-      const weekend=[0,6].includes(new Date(base-ago*DAY).getUTCDay());
-      const count=ago===0?6:weekend?Math.floor(random()*3):3+Math.floor(random()*5);
+    // Use the same twelve calendar months as the default activity heatmap.
+    // All cards, chart cells and exports are aggregated from these event records.
+    const base=Date.parse(dayIn(now,'Asia/Shanghai')+'T00:00:00+08:00');
+    const month=new Date(base+8*3600000);
+    const first=Date.UTC(month.getUTCFullYear(),month.getUTCMonth()-11,1)-8*3600000;
+    const scales=[1,.6,.08,.004,.025,.3],weights=[.50,.74,.81,.84,.89,1];
+    for(let ago=Math.round((base-first)/DAY);ago>=0;ago--){
+      const weekend=[0,6].includes(new Date(base-ago*DAY+8*3600000).getUTCDay());
+      const vacation=(ago>=90&&ago<=103)||(ago>=220&&ago<=230);
+      const showcase=ago<=6||ago===12;
+      const active=showcase||(!vacation&&random()<(weekend?.09:.43));
+      const count=active?1+Math.floor(random()*4):0;
       for(let s=0;s<count;s++){
-        const p=projects[Math.floor(random()*projects.length)];
+        const pick=random(),index=s===0&&ago>=1&&ago<=6?ago-1:weights.findIndex(w=>pick<w);
+        const p=projects[index];
         const model=models[Math.floor(random()*models.length)];
-        const session=`demo-${String(364-ago).padStart(3,'0')}-${s}`;
-        for(let turn=0;turn<3;turn++){
-          const input=Math.round((18000+random()*65000)*(ago<45?1.45:1));
-          const cached=Math.floor(input*(.35+random()*.42)),write=Math.floor(input*.035);
-          const output=Math.round(2000+random()*11000);
-          // Today's events always precede the visitor's current time.
-          const at=ago===0?now-(count-s)*600000+turn*90000:base-ago*DAY+(s+8)*3600000+turn*90000;
+        const session=`demo-${dayIn(base-ago*DAY,'Asia/Shanghai')}-${s}`;
+        const turns=5+Math.floor(random()*14),intensity=.35+random()*1.6;
+        const start=base-ago*DAY+([9,11,14,16][s]+random()*.5)*3600000;
+        for(let turn=0;turn<turns;turn++){
+          const input=Math.round((150000+random()*400000)*scales[index]*intensity);
+          const cached=Math.floor(input*(.92+random()*.065)),write=Math.floor(input*.005);
+          const output=Math.max(120,Math.round((2500+random()*9000)*Math.sqrt(scales[index])));
+          const at=start+turn*150000;
+          if(at>now)continue;
           events.push({at:iso(at),session,title:tasks[(s+ago)%tasks.length]+' · '+p[1],
             project:p[0],project_name:p[1],project_path:'/demo/projects/'+p[0],source:p[2],source_name:p[3],
             account:ago%7===0?'demo-team':'demo-personal',model:ago===12&&s===0?'demo-experimental':model,
             input,uncached:input-cached-write,cached,write,output,reasoning:Math.floor(output*.28),total:input+output,
-            context_input:turn===2&&s===0?300000:input});
+            context_input:input});
         }
       }
     }
@@ -52,7 +63,8 @@ const DemoData = (() => {
       quota_alerts:{enabled:true,remaining_percent:20,predictive:true},
       remotes:[{id:'dev',name:'演示开发机',host:'dev.example.invalid',path:'/demo/codex',interval:120,enabled:true},
         {id:'lab',name:'演示实验机',host:'lab.example.invalid',path:'/demo/codex',interval:120,enabled:true}]};
-    const remotes=()=>config.remotes.map(r=>({...r,busy:false,error:null,files:120,synced_at:iso(now),root:r.path}));
+    const remotes=()=>config.remotes.map(r=>({...r,busy:false,error:null,
+      files:new Set(events.filter(e=>e.source==='ssh:'+r.id).map(e=>e.session)).size,synced_at:iso(now),root:r.path}));
     function priced(e){
       const rates={...catalog.models,...config.prices};
       const rate=config.prices[e.model]||rates[catalog.aliases?.[e.model]||e.model];
@@ -124,27 +136,60 @@ const DemoData = (() => {
         pricing:{...catalog,models:{...catalog.models,...config.prices},overrides:Object.keys(config.prices),unknown_models:[...new Set(rows.filter(e=>e.cost==null).map(e=>e.model))]},
         remotes:remotes(),collector:{running:false,last_scan:iso(now),scan_interval_seconds:30}};
     }
-    const quotaNow=now/1000,anchor=Math.floor(quotaNow/86400)*86400;
-    const resetEvents=[['scheduled',6,93],['official',4,68],['credit',2,82]].map(([kind,ago,before],i)=>({id:'demo-reset-'+i,kind,label:'每周额度',
-      at:anchor-ago*86400+36000,since:anchor-ago*86400+35940,confirmed_at:anchor-ago*86400+36060,before_used:before,after_used:0,
-      old_reset:anchor+3*86400,new_reset:anchor+3*86400,before_count:3,after_count:2}));
+    const quotaNow=now/1000,anchor=base/1000,day=DAY/1000;
+    const begin=anchor-13*day,end=anchor+day,scheduled=begin+7*day,deadline=scheduled+7*day;
+    const resetEvents=[['scheduled',scheduled],['official',anchor-4*day],['credit',anchor-2*day]].map(([kind,at],i)=>({
+      id:'demo-reset-'+i,kind,label:'每周额度',at,since:at-60,confirmed_at:at,
+      before_used:0,after_used:0,old_reset:i===0?at:deadline,new_reset:deadline,
+      ...(kind==='credit'?{before_count:3,after_count:2}:{})}));
+    const boundaries=[begin,...resetEvents.map(e=>e.at),end],samples=[],references=[];
+    // Work in bursts, sleep from 23:00 to 09:00, and take a lunch break.
+    // Daily weights deliberately show both slower and faster use than the reference.
+    const dailyWeights=[[.2,1.7,.4,2.4,.3,1,0],[.05,1],[1,.15],[.2,1,.4]];
+    const missing=[{since:anchor-5*day+10*3600,until:anchor-5*day+17*3600},
+      {since:anchor-day+14*3600,until:anchor-day+20*3600}];
+    for(let part=0;part<boundaries.length-1;part++){
+      const since=boundaries[part],until=boundaries[part+1],target=[100,68,82,46][part];
+      const steps=[];
+      for(let at=since;at<until;at+=1800){
+        const hour=((at+8*3600)%day)/3600,d=Math.floor((at-since)/day);
+        const work=hour>=9&&hour<12?1:hour>=14&&hour<18?2.2:hour>=20&&hour<22?.35:0;
+        const burst=1+Math.sin((at-since)/1800*1.7)*.65;
+        steps.push({at,weight:work*burst*(dailyWeights[part][d]||0)});
+      }
+      const totalWeight=steps.reduce((s,p)=>s+p.weight,0);let consumed=0,lastAt=null;
+      for(const step of steps){
+        if(step.at>quotaNow)break;
+        if(!missing.some(g=>step.at>g.since&&step.at<g.until)){
+          samples.push({at:step.at,used_percent:Math.round(target*consumed/totalWeight*10)/10,
+            break_before:lastAt===null||step.at-lastAt>1800});lastAt=step.at;
+        }
+        consumed+=step.weight;
+      }
+      const last=Math.min(until-1,quotaNow);
+      // Preserve the exact pre-reset endpoint and latest card observation.
+      if(last>samples.at(-1).at&&!missing.some(g=>last>g.since&&last<g.until)){
+        const fraction=last===quotaNow?(last-steps.findLast(s=>s.at<=last).at)/1800:1;
+        const current=steps.findLast(s=>s.at<=last);
+        const used=consumed-current.weight*(1-fraction);
+        samples.push({at:last,used_percent:Math.round(target*used/totalWeight*10)/10,break_before:last-lastAt>1800});
+      }
+      if(part<resetEvents.length)resetEvents[part].before_used=samples.at(-1).used_percent;
+      // Reference derives from the reset deadline, never from actual consumption.
+      const cycleEnd=part===0?scheduled:deadline;
+      references.push({since,until:Math.min(until,cycleEnd),before:0,
+        after:100*(Math.min(until,cycleEnd)-since)/(cycleEnd-since),cycle_end:cycleEnd});
+    }
     const acknowledged=new Set();
     function quota(){return {account:{label:'演示账号 · 非真实数据',plan:'pro'},windows:[
-      {id:'codex:primary',bucket:'codex',label:'每周额度',used_percent:63,remaining_percent:37,resets_at:anchor+3*86400,window_minutes:10080},
+      {id:'codex:primary',bucket:'codex',label:'每周额度',used_percent:samples.at(-1).used_percent,
+        remaining_percent:100-samples.at(-1).used_percent,resets_at:deadline,window_minutes:10080},
       {id:'codex:secondary',bucket:'codex',label:'5 小时额度',used_percent:28,remaining_percent:72,resets_at:quotaNow+7200,window_minutes:300}],
       reset_credits:{available_count:2,details:[{expires_at:quotaNow+15*86400},{expires_at:quotaNow+28*86400}]},reset_events:resetEvents,
       fetched_at:iso(now),busy:false,stale:false,history_scope:'demo-account',history_available:true,
-      collector:{running:false,interval_seconds:60,failures:0,last_success:iso(now)},alerts:[{id:'demo-alert',at:quotaNow-3600,active:false,
+      collector:{running:false,interval_seconds:60,failures:0,last_success:iso(now)},alerts:[{id:'demo-alert',at:resetEvents.at(-1).at-3600,active:false,
         acknowledged:acknowledged.has('demo-alert'),message:'模拟历史提醒：上一使用段剩余额度低于 20%。'}]};}
     function quotaRange(){
-      const begin=anchor-13*86400,end=anchor+86400,samples=[],references=[];
-      const boundaries=[begin,...resetEvents.map(e=>e.at),end];
-      for(let part=0;part<boundaries.length-1;part++){
-        const since=boundaries[part],until=Math.min(boundaries[part+1]-1,quotaNow),target=[93,68,82,63][part];
-        if(until<since)continue;
-        for(let at=since;at<until;at+=1800){const progress=(at-since)/(until-since);samples.push({at,used_percent:Math.round(target*progress**1.18*10)/10,break_before:at===since});}
-        samples.push({at:until,used_percent:target});references.push({since,until,before:0,after:target});
-      }
       const ticks=[];for(let at=begin;at<=end;at+=86400)ticks.push({at,date:dayIn(at*1000,config.timezone)});
       return {custom_range:true,history_scope:'demo-account',timezone:config.timezone,grain:'auto',
         range:{since:begin,until:end,since_date:ticks[0].date,until_date:ticks.at(-2).date},ticks,

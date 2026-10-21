@@ -2,6 +2,7 @@
 
 Never imports the application, discovers Codex directories, or copies user data.
 """
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -29,7 +30,7 @@ def build():
     html = html.replace('<script src="./model-charts.js"', '<link rel="stylesheet" href="./demo.css">\n  <script src="./demo-catalog.js" defer></script><script src="./demo-data.js" defer></script><script src="./demo-bridge.js" defer></script>\n  <script src="./model-charts.js"')
     banner = '''<section class="demo-banner" aria-label="模拟演示说明">
       <div><div class="demo-label">INTERACTIVE DEMO</div><strong>随手体验，数据都是模拟的。</strong>
-      <p>365 天合成用量 · 6 个虚构项目 · 3 台模拟机器。不会读取你的 Codex、连接账号或 SSH；修改仅在当前页面内生效。</p>
+      <p>近 12 个月合成用量 · 6 个虚构项目 · 3 台模拟机器。不会读取你的 Codex、连接账号或 SSH；修改仅在当前页面内生效。</p>
       <div class="demo-shortcuts"><button data-view="overview" data-overview-tab="analysis">趋势与成本 ↗</button><button data-view="projects">项目分析 ↗</button><button data-view="quota">额度与重置 ↗</button></div></div>
       <div class="demo-actions"><button id="resetDemo" class="text-button">重置演示</button><a href="https://github.com/KJesko/codex-usage" target="_blank" rel="noopener noreferrer">获取源码 ↗</a></div>
     </section>'''
@@ -37,7 +38,6 @@ def build():
     html = html.replace('<span>网页预览</span>', '<span>模拟演示</span>')
     html = html.replace('正在整理本地用量记录…', '正在生成模拟用量记录…')
     html = html.replace('<span data-help="后台采集">后台日志采集 30 秒 · 账号额度采集 60 秒</span>', '<span>GitHub Pages · 全部数据由浏览器生成 · 非真实账单</span>')
-    (OUTPUT / 'index.html').write_text(html, encoding='utf-8')
     css = (OUTPUT / 'style.css').read_text(encoding='utf-8')
     css = re.sub(r', url\("/fonts/[^\"]+"\) format\("truetype"\)', '', css)
     (OUTPUT / 'style.css').write_text(css, encoding='utf-8')
@@ -50,6 +50,9 @@ def build():
                    ('单价仅保存在本机', '演示修改仅在当前页面内生效，刷新后恢复'),
                    ("'更新于 ' +", "'模拟数据生成于 ' +")],
         'quota-page.js': [('官方重置预测', '社区预测（演示中停用）')],
+        'quota-range.js': [('viewports.get(key)||initialView(q)',
+                            'viewports.get(key)||{since:q.range.since,until:q.range.until}'),
+                           ('默认显示最近 7 天', '演示默认显示全部历史')],
     }
     for name, replacements in substitutions.items():
         path = OUTPUT / name
@@ -59,6 +62,13 @@ def build():
                 raise ValueError(f'Demo adaptation no longer matches {name}: {old}')
             source = source.replace(old, new)
         path.write_text(source, encoding='utf-8')
+    # A fresh deployment must not mix the new fixture with cached demo assets.
+    def version_asset(match):
+        name = match[2]
+        digest = hashlib.sha256((OUTPUT / name).read_bytes()).hexdigest()[:12]
+        return f'{match[1]}="./{name}?v={digest}"'
+    html = re.sub(r'(src|href)="\./([^"?]+)(?:\?[^" ]*)?"', version_asset, html)
+    (OUTPUT / 'index.html').write_text(html, encoding='utf-8')
     (OUTPUT / '.nojekyll').write_text('', encoding='utf-8')
     expected = set(assets + ['demo-data.js', 'demo-bridge.js', 'demo.css', 'demo-catalog.js', '.nojekyll'])
     actual = {p.name for p in OUTPUT.iterdir()}

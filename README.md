@@ -13,9 +13,13 @@ Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器�
 
 **[打开在线交互演示 →](https://kjesko.github.io/codex-usage/)** · 无需安装或登录。
 
-演示站复用真实应用的前端，在浏览器中生成 **365 天、6 个虚构项目、3 台模拟机器**的用量。可以切换日期、机器和模型，展开项目 / 会话详情，查看成本与缓存收益，体验额度曲线并导出模拟 CSV。
+演示站复用真实应用的前端，在浏览器中生成 **近 12 个月、6 个虚构项目、3 台模拟机器**的用量。可以切换日期、机器和模型，展开项目 / 会话详情，查看成本与缓存收益，体验额度曲线并导出模拟 CSV。
 
-建议依次体验：[全年活动总览](https://kjesko.github.io/codex-usage/) → [近 30 天详细分析](https://kjesko.github.io/codex-usage/?view=overview&tab=analysis&range=30) → [项目分析](https://kjesko.github.io/codex-usage/?view=projects&range=30) → [额度与重置](https://kjesko.github.io/codex-usage/?view=quota)。
+模拟场景包含稀疏工作日、周末与休假空档，项目用量从几十万到数亿 Token，输入缓存命中率约 95%。总览、活动热图、项目 / 模型 / 会话明细及 CSV 都由同一批记录汇总。默认「全部时间」的数据均在热图的 12 个日历月窗口内，合计一致。
+
+额度曲线另行模拟夜间休息、午休、集中消耗、缓慢使用和采集中断。正常周期完整持续 7 天，均匀参考线在周期末到达 100%；提前发生的官方重置与重置卡事件单独分段。示例完整周期恰好耗尽额度，但正常周期重置并不要求实际用量达到 100%。额度百分比用于演示账号窗口，不按 Token 总数换算。
+
+建议依次体验：[全年活动总览](https://kjesko.github.io/codex-usage/) → [近 30 天详细分析](https://kjesko.github.io/codex-usage/?view=overview&tab=analysis&range=30) → [项目分析](https://kjesko.github.io/codex-usage/?view=projects&range=all) → [额度与重置](https://kjesko.github.io/codex-usage/?view=quota)。
 
 所有账号、用量、费用、额度及下方截图均为**模拟数据**。演示站不会读取访客的 Codex 文件、连接真实账号或 SSH，也不启动后台任务。价格与统计设置仅在当前页面内生效，刷新或点击「重置演示」即可恢复；主题偏好保存在浏览器中。导出的文件名称和内容均带有演示标记。
 
@@ -34,7 +38,7 @@ Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器�
 
 ![模型每日用量对比，全部为模拟数据](docs/screenshots/demo-models.png)
 
-**额度与重置：** 查看模拟额度窗口、消耗曲线和三种重置事件，支持缩放及日期范围选择。
+**额度与重置：** 默认展开完整历史，查看完整七天周期、夜间平台、蓝色采集缺口和三种重置事件，支持缩放及日期范围选择。
 
 ![额度曲线和重置记录，全部为模拟数据](docs/screenshots/demo-quota.png)
 

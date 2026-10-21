@@ -49,11 +49,78 @@ test('quota fixture has ordered samples, bounded percentages, reset breaks and a
   assert.equal(g.samples.at(-1).used_percent,demo.quota().windows[0].used_percent);
   assert.equal(demo.acknowledge('demo-alert').alerts[0].acknowledged,true);
 });
+
+test('sparse activity, project scales and cached inputs stay consistent across calendar boundaries',()=>{
+  const {build}=require('../src/codex_usage/static/activity-heatmap.js');
+  for(const date of ['2026-10-21T15:30:00Z','2027-01-01T00:05:00Z','2028-03-01T15:30:00Z']){
+    const clock=Date.parse(date),demo=create(catalog,clock),r=demo.report();
+    const active=r.timeline.filter(d=>d.total>0);
+    assert.ok(active.length>65&&active.length<180,`${date}: ${active.length} active days`);
+    for(const mode of ['day','week','cumulative'])assert.equal(build(r,mode).summary.total,r.summary.total);
+    assert.ok(r.projects[0].total/r.projects.at(-1).total>1000);
+    assert.equal(r.projects.length,6);
+    for(const p of r.projects)assert.ok(p.cache_rate>.9&&p.cache_rate<1);
+    for(const e of demo.events){
+      assert.equal(e.input,e.uncached+e.cached+e.write);
+      assert.equal(e.total,e.input+e.output);
+      assert.ok(e.uncached>=0&&e.reasoning<=e.output&&Date.parse(e.at)<=clock);
+    }
+    for(const key of ['total','input','cached','output','events','unpriced_tokens']){
+      for(const dimension of ['timeline','projects','sessions','models']){
+        assert.equal(r[dimension].reduce((sum,row)=>sum+row[key],0),r.summary[key]);
+      }
+    }
+    for(const dimension of ['timeline','projects','sessions','models']){
+      assert.ok(Math.abs(r[dimension].reduce((sum,row)=>sum+row.known_cost,0)-r.summary.known_cost)<1e-8);
+    }
+    const dailyTotals=active.map(d=>d.total);
+    assert.ok(Math.max(...dailyTotals)>Math.min(...dailyTotals)*20);
+  }
+});
+
+test('weekly reset, independent references, sleep plateaus and collection gaps model different behavior',()=>{
+  const demo=create(catalog,now),q=demo.quotaRange(),g=q.groups[0],scheduled=g.events[0];
+  assert.equal(scheduled.at-q.range.since,7*86400);
+  assert.equal(scheduled.old_reset,scheduled.at);
+  assert.equal(scheduled.new_reset-scheduled.at,7*86400);
+  assert.equal(g.references[0].until,scheduled.at);assert.equal(g.references[0].after,100);
+  for(const ref of g.references){
+    assert.equal(ref.after,100*(ref.until-ref.since)/(ref.cycle_end-ref.since));
+  }
+  for(const e of g.events){
+    const before=g.samples.findLast(s=>s.at<e.at),after=g.samples.find(s=>s.at===e.at);
+    assert.equal(e.before_used,before.used_percent);assert.equal(e.after_used,after.used_percent);
+    assert.ok(after.break_before);
+  }
+  let sleepIntervals=0,gaps=0,fast=false,slow=false;
+  for(let i=1;i<g.samples.length;i++){
+    const a=g.samples[i-1],b=g.samples[i];
+    if(!b.break_before){
+      assert.ok(b.used_percent>=a.used_percent);
+      const hour=((a.at+8*3600)%86400)/3600;
+      if(b.at-a.at===1800&&(hour<9||hour>=23)){
+        assert.equal(b.used_percent,a.used_percent);sleepIntervals++;
+      }
+    }else if(b.at-a.at>900){
+      gaps++;assert.ok(!g.events.some(e=>e.at>a.at&&e.at<=b.at));
+    }
+    const ref=g.references.find(r=>b.at>=r.since&&b.at<r.until);
+    if(ref){const baseline=100*(b.at-ref.since)/(ref.cycle_end-ref.since);
+      fast||=b.used_percent>baseline+15;slow||=b.used_percent<baseline-15;}
+  }
+  assert.ok(sleepIntervals>100);assert.equal(gaps,2);assert.ok(fast&&slow);
+  assert.equal(demo.quota().windows[0].used_percent+demo.quota().windows[0].remaining_percent,100);
+});
 test('generated site uses subdirectory-safe assets and includes no server data',()=>{
   const fs=require('node:fs'),path=require('node:path'),root=path.resolve(__dirname,'../dist/demo');
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   assert.ok(html.includes('全部数据由浏览器生成'));assert.doesNotMatch(html,/(?:href|src)="\/(?!\/)/);
-  assert.ok(html.indexOf('demo-bridge.js')<html.indexOf('src="./app.js"'));
+  assert.ok(html.indexOf('demo-bridge.js')<html.indexOf('src="./app.js?'));
   for(const name of fs.readdirSync(root))assert.ok(/\.(?:html|js|css|svg)$/.test(name)||name==='.nojekyll');
-  for(const match of html.matchAll(/(?:href|src)="\.\/([^"?]*)"/g))if(match[1])assert.ok(fs.existsSync(path.join(root,match[1])),match[1]);
+  const assets=[...html.matchAll(/(?:href|src)="\.\/([^"?]+)\?v=([a-f0-9]{12})"/g)];
+  assert.ok(assets.length>10);
+  for(const match of assets){
+    const file=path.join(root,match[1]);assert.ok(fs.existsSync(file),match[1]);
+    assert.equal(match[2],require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0,12));
+  }
 });
