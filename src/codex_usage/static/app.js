@@ -351,7 +351,7 @@ function setView(view, tab='summary') {
   if (view === 'projects') { state.project = ''; state.page = 1; }
   state.view=view;if(view==='overview')state.tab=tab;
   updateControls(); syncURL(true); render(); window.scrollTo({top:0,behavior:'instant'});
-  if(view!=='settings' && view!=='quota')load();
+  if(view!=='quota' && (view!=='settings' || !data))load();
 }
 async function showSession(id) {
   sessionDetailController?.abort();

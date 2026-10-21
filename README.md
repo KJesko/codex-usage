@@ -17,6 +17,8 @@ Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器�
 
 模拟场景包含稀疏工作日、周末与休假空档，项目用量从几十万到数亿 Token，输入缓存命中率约 95%。总览、活动热图、项目 / 模型 / 会话明细及 CSV 都由同一批记录汇总。默认「全部时间」的数据均在热图的 12 个日历月窗口内，合计一致。
 
+不同项目使用不同的模型组合，并包含少量多模型会话。CSV 跟随顶部的日期、机器、项目、模型和账号筛选；会话导出还包含搜索命中的所有分页，并保留当前排序。导出提供用量构成、成本分项、缓存收益、会话标识和统计时区。未定价部分的 `cost` 留空，`known_cost` 仅为已定价小计；金额保留计算精度，页面金额按显示位数四舍五入。模型图表的勾选和缩放只影响图表展示，不改变下方汇总和导出范围。
+
 额度曲线另行模拟夜间休息、午休、集中消耗、缓慢使用和采集中断。正常周期完整持续 7 天，均匀参考线在周期末到达 100%；提前发生的官方重置与重置卡事件单独分段。示例完整周期恰好耗尽额度，但正常周期重置并不要求实际用量达到 100%。额度百分比用于演示账号窗口，不按 Token 总数换算。
 
 建议依次体验：[全年活动总览](https://kjesko.github.io/codex-usage/) → [近 30 天详细分析](https://kjesko.github.io/codex-usage/?view=overview&tab=analysis&range=30) → [项目分析](https://kjesko.github.io/codex-usage/?view=projects&range=all) → [额度与重置](https://kjesko.github.io/codex-usage/?view=quota)。
@@ -251,6 +253,8 @@ python -m http.server 8791 --bind 127.0.0.1 --directory dist
 ```
 
 打开 <http://127.0.0.1:8791/demo/>。构建只复制明确列出的前端文件和价格快照，不启动 Python 应用，也不读取任何用户日志或配置。模拟数据与浏览器适配代码位于 `demo/`，生成目录 `dist/demo/` 不提交到 Git。
+
+`npm run test:demo` 会核对 72 组筛选组合及四种 CSV，覆盖原始事件合计、日 / 周 / 月分桶、会话搜索排序、未定价与自定义价格、跨时区和夏令时、未来日期及额度重置。`npm test` 检查共享前端的图表与导航行为。
 
 推送到 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 自动构建、验证并部署。Fork 后如需自行发布，请在仓库 Settings → Pages 中选择 GitHub Actions，并更新 README 和演示页中的项目链接。
 
