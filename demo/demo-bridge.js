@@ -11,7 +11,12 @@
       let result;
       switch(url.pathname){
         case '/api/data':result=demo.report(query);break;
-        case '/api/settings':result=demo.settings(options.method==='POST'?JSON.parse(options.body):null);break;
+        case '/api/settings':
+          result=demo.settings(options.method==='POST'?JSON.parse(options.body):null);
+          // saveSettings renders the cached account immediately; update its history
+          // scope too, so a timezone change does not wait for the next account poll.
+          if(options.method==='POST'&&typeof accountData!=='undefined')accountData=demo.quota();
+          break;
         case '/api/account':case '/api/account/refresh':result=demo.quota();break;
         case '/api/account/range':result=demo.quotaRange();break;
         case '/api/account/acknowledge':result=demo.acknowledge(query.id);break;
@@ -25,6 +30,10 @@
   };
   document.addEventListener('click',e=>{
     const target=e.target.closest('button');if(!target)return;
+    if(target.id==='refresh'){
+      e.preventDefault();e.stopImmediatePropagation();
+      refreshAccount(true);load(true);return;
+    }
     if(target.id==='export'){
       e.preventDefault();e.stopImmediatePropagation();
       const dimension={overview:'timeline',projects:'projects',sessions:'sessions',models:'models'}[state.view];

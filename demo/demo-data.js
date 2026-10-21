@@ -11,6 +11,23 @@ const DemoData = (() => {
     if(!formatters.has(zone))formatters.set(zone,new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}));
     return formatters.get(zone).format(new Date(value));
   };
+  const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&iso(Date.parse(value)).slice(0,10)===value;
+  function wallClock(value,zone){
+    const key='clock:'+zone;
+    if(!formatters.has(key))formatters.set(key,new Intl.DateTimeFormat('en-GB',{timeZone:zone,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}));
+    const p=Object.fromEntries(formatters.get(key).formatToParts(new Date(value)).map(p=>[p.type,p.value]));
+    return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.${iso(value).slice(20,23)}`;
+  }
+  // Resolve local calendar boundaries independently of the visitor's OS timezone.
+  // At DST transitions use the first repeated time, or advance through a missing time.
+  function instant(day,time,zone){
+    const local=day+'T'+time,wanted=Date.parse(local+'Z');
+    const offsets=[-DAY,0,DAY].map(shift=>Date.parse(wallClock(wanted+shift,zone)+'Z')-(wanted+shift));
+    const candidates=[...new Set(offsets)].map(offset=>wanted-offset);
+    const matches=candidates.filter(at=>wallClock(at,zone)===local);
+    return matches.length?Math.min(...matches):Math.max(...candidates);
+  }
   function create(catalog, now=Date.now()) {
     let seed=20261021;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
@@ -40,7 +57,10 @@ const DemoData = (() => {
       for(let s=0;s<count;s++){
         const pick=random(),index=s===0&&ago>=1&&ago<=6?ago-1:weights.findIndex(w=>pick<w);
         const p=projects[index];
-        const model=models[Math.floor(random()*models.length)];
+        // Main implementation, service work and lightweight documentation use different mixes.
+        const modelWeights=[[.62,.87,.90,1],[.35,.85,.90,1],[.30,.40,.90,1],
+          [.15,.30,.95,1],[.25,.45,.95,1],[.65,.75,.80,1]][index];
+        const modelPick=random(),model=models[modelWeights.findIndex(w=>modelPick<w)];
         const session=`demo-${dayIn(base-ago*DAY,'Asia/Shanghai')}-${s}`;
         const turns=5+Math.floor(random()*14),intensity=.35+random()*1.6;
         const start=base-ago*DAY+([9,11,14,16][s]+random()*.5)*3600000;
@@ -52,7 +72,8 @@ const DemoData = (() => {
           if(at>now)continue;
           events.push({at:iso(at),session,title:tasks[(s+ago)%tasks.length]+' · '+p[1],
             project:p[0],project_name:p[1],project_path:'/demo/projects/'+p[0],source:p[2],source_name:p[3],
-            account:ago%7===0?'demo-team':'demo-personal',model:ago===12&&s===0?'demo-experimental':model,
+            account:ago%7===0?'demo-team':'demo-personal',
+            model:ago===12&&s===0?'demo-experimental':s===1&&ago%3===0&&turn>=turns-2?'gpt-6-luna':model,
             input,uncached:input-cached-write,cached,write,output,reasoning:Math.floor(output*.28),total:input+output,
             context_input:input});
         }
@@ -91,12 +112,14 @@ const DemoData = (() => {
       return [...groups].map(([k,values])=>({...sum(values),...details(k,values)}));
     }
     function report(query={}){
-      const zone=config.timezone,today=dayIn(now,zone),grain=query.grain||'day';
+      const zone=query.timezone||config.timezone,today=dayIn(now,zone),grain=query.grain||'day';
       if(!['day','week','month'].includes(grain))throw new Error('无效的统计粒度');
       const end=query.until||today;
-      const available=events.filter(e=>!config.usage_since||dayIn(e.at,zone)>=config.usage_since);
-      const start=[query.since||dayIn(available[0]?.at||now,zone),config.usage_since||''].sort().at(-1);
-      if(start>end)throw new Error('开始日期不能晚于结束日期');
+      if(!validDate(end)||(query.since&&!validDate(query.since)))throw new Error('日期格式无效');
+      if(query.since&&query.since>end)throw new Error('开始日期不能晚于结束日期');
+      const cutoff=config.usage_since?instant(config.usage_since,'00:00:00.000',config.timezone):null;
+      const available=events.filter(e=>cutoff===null||Date.parse(e.at)>=cutoff);
+      const start=[query.since||dayIn(available[0]?.at||now,zone),cutoff===null?'':dayIn(cutoff,zone)].sort().at(-1);
       if((Date.parse(end)-Date.parse(start))/DAY>3660)throw new Error('请缩短日期范围');
       const dimension=available.filter(e=>['project','model','session','account','source'].every(k=>!query[k]||e[k]===query[k])).map(priced);
       const rows=dimension.filter(e=>{const d=dayIn(e.at,zone);return d>=start&&d<=end;});
@@ -107,17 +130,28 @@ const DemoData = (() => {
       const sort=rows=>rows.sort((a,b)=>b.total-a.total);
       const monday=offset(today,-((new Date(today+'T12:00:00Z').getUTCDay()+6)%7));
       const select=(since,until=today)=>sum(dimension.filter(e=>{const d=dayIn(e.at,zone);return since<=d&&d<=until;}));
-      const span=query.period==='week'?7:Math.round((Date.parse(end)-Date.parse(start))/DAY)+1;
-      const prevStart=offset(start,-span),prevEnd=offset(end,-span),canCompare=prevStart>=dayIn(available[0]?.at||now,zone);
-      const prev=dimension.filter(e=>{const d=dayIn(e.at,zone);return d>=prevStart&&d<=prevEnd&&(end!==today||d!==prevEnd||Date.parse(e.at)<now-span*DAY);});
-      const current=rows.filter(e=>end!==today||Date.parse(e.at)<now);
+      const comparisonEnd=end<today?end:today,partial=comparisonEnd===today;
+      const span=query.period==='week'?7:Math.round((Date.parse(comparisonEnd)-Date.parse(start))/DAY)+1;
+      const begin=instant(start,'00:00:00.000',zone);
+      const stop=partial?now:instant(offset(comparisonEnd,1),'00:00:00.000',zone);
+      const prevStart=offset(start,-span);
+      const previousBegin=instant(prevStart,'00:00:00.000',zone);
+      const previousStop=instant(offset(wallClock(stop,zone).slice(0,10),-span),wallClock(stop,zone).slice(11),zone);
+      const canCompare=start<=comparisonEnd&&available.length>0&&prevStart>=dayIn(available[0].at,zone)&&(cutoff===null||previousBegin>=cutoff);
+      const inWindow=(e,a,b)=>Date.parse(e.at)>=a&&Date.parse(e.at)<b;
+      const prev=dimension.filter(e=>inWindow(e,previousBegin,previousStop));
+      const current=dimension.filter(e=>inWindow(e,begin,stop));
       const attribution=(key,name)=>{
         const ids=new Set([...prev,...current].map(e=>e[key]));
         return [...ids].map(id=>{const a=prev.filter(e=>e[key]===id),b=current.filter(e=>e[key]===id),x=sum(a),y=sum(b),sample=b[0]||a[0];
           return {id,name:sample[name],source_name:key==='project'?sample.source_name:'',previous_total:x.total,current_total:y.total,
             previous_cost:x.known_cost,current_cost:y.known_cost,delta_total:y.total-x.total,delta_cost:y.known_cost-x.known_cost};});
       };
-      const midnight=day=>day+'T00:00:00';
+      const comparison=start>comparisonEnd?{available:false,reason:'当前范围尚未开始，没有可比较的用量。'}:{
+        available:canCompare,reason:canCompare?null:'模拟数据未覆盖完整上期，请选择较近的日期。',current:sum(current),previous:canCompare?sum(prev):null,
+        current_range:{since:iso(begin),until:iso(stop)},previous_range:{since:iso(previousBegin),until:iso(previousStop)},
+        basis:query.period==='week'?'上周同期':'上一等长时段',partial_day:partial,
+        projects:canCompare?attribution('project','project_name'):[],models:canCompare?attribution('model','model'):[]};
       return {summary:sum(rows),today:select(today),week:select(monday),month:select(today.slice(0,7)+'-01'),
         timeline:[...timeline].map(([date,es])=>({date,...sum(es)})),
         model_timeline:[...days].map(([date,es])=>({date,models:grouped(es,e=>e.model,name=>({name}))})),
@@ -127,12 +161,10 @@ const DemoData = (() => {
         models:sort(grouped(rows,e=>e.model,name=>({name}))),
         options:{projects:projects.map(([id,name,source])=>({id,name,source,path:'/demo/projects/'+id})),models:[...new Set(available.map(e=>e.model))].sort(),
           accounts:[...new Set(available.map(e=>e.account))].sort(),sources:[{id:'local',name:'演示笔记本'},...config.remotes.map(r=>({id:'ssh:'+r.id,name:r.name}))]},
-        comparison:{available:canCompare,reason:canCompare?null:'模拟数据未覆盖完整上期，请选择较近的日期。',current:sum(current),previous:canCompare?sum(prev):null,
-          current_range:{since:midnight(start),until:end===today?iso(now):midnight(offset(end,1))},previous_range:{since:midnight(prevStart),until:end===today?iso(now-span*DAY):midnight(offset(prevEnd,1))},
-          basis:query.period==='week'?'上周同期':'上一等长时段',partial_day:end===today,projects:canCompare?attribution('project','project_name'):[],models:canCompare?attribution('model','model'):[]},
+        comparison,
         coverage:{sessions:new Set(events.map(e=>e.session)).size,metadata_sessions:new Set(events.map(e=>e.session)).size,files:new Set(events.map(e=>e.session)).size,
           missing_sessions:0,retained_files:0,scan_ms:0,warnings:{},issues:[]},limits:[],missing_projects:[],scanned_at:iso(now),timezone:zone,
-        usage_start:config.usage_since?{date:config.usage_since,timezone:zone}:null,range:{since:start,until:end,today,grain},
+        usage_start:config.usage_since?{date:config.usage_since,timezone:config.timezone,at:iso(cutoff)}:null,range:{since:start,until:end,today,grain},
         pricing:{...catalog,models:{...catalog.models,...config.prices},overrides:Object.keys(config.prices),unknown_models:[...new Set(rows.filter(e=>e.cost==null).map(e=>e.model))]},
         remotes:remotes(),collector:{running:false,last_scan:iso(now),scan_interval_seconds:30}};
     }
@@ -186,21 +218,25 @@ const DemoData = (() => {
         remaining_percent:100-samples.at(-1).used_percent,resets_at:deadline,window_minutes:10080},
       {id:'codex:secondary',bucket:'codex',label:'5 小时额度',used_percent:28,remaining_percent:72,resets_at:quotaNow+7200,window_minutes:300}],
       reset_credits:{available_count:2,details:[{expires_at:quotaNow+15*86400},{expires_at:quotaNow+28*86400}]},reset_events:resetEvents,
-      fetched_at:iso(now),busy:false,stale:false,history_scope:'demo-account',history_available:true,
+      fetched_at:iso(now),busy:false,stale:false,history_scope:'demo-account:'+config.timezone,history_available:true,
       collector:{running:false,interval_seconds:60,failures:0,last_success:iso(now)},alerts:[{id:'demo-alert',at:resetEvents.at(-1).at-3600,active:false,
         acknowledged:acknowledged.has('demo-alert'),message:'模拟历史提醒：上一使用段剩余额度低于 20%。'}]};}
     function quotaRange(){
-      const ticks=[];for(let at=begin;at<=end;at+=86400)ticks.push({at,date:dayIn(at*1000,config.timezone)});
-      return {custom_range:true,history_scope:'demo-account',timezone:config.timezone,grain:'auto',
-        range:{since:begin,until:end,since_date:ticks[0].date,until_date:ticks.at(-2).date},ticks,
+      const ticks=[],firstDay=dayIn(begin*1000,config.timezone),lastDay=offset(dayIn(now,config.timezone),1);
+      for(let date=firstDay;date<=lastDay;date=offset(date,1))ticks.push({at:instant(date,'00:00:00.000',config.timezone)/1000,date});
+      return {custom_range:true,history_scope:'demo-account:'+config.timezone,timezone:config.timezone,grain:'auto',
+        range:{since:ticks[0].at,until:ticks.at(-1).at,since_date:ticks[0].date,until_date:ticks.at(-2).date},ticks,
         groups:[{id:'demo-week',label:'每周额度（模拟）',plan:'pro',window:'codex:primary',sample_count:samples.length,segment_count:4,
           samples,references,idle:[],events:resetEvents}]};
     }
     function settings(next){
       if(next){
         new Intl.DateTimeFormat('en',{timeZone:next.timezone});
-        if(next.usage_since&&!/^\d{4}-\d{2}-\d{2}$/.test(next.usage_since))throw new Error('日期格式无效');
-        for(const p of Object.values(next.prices||{}))for(const k of ['input','cached','write','output'])if(!Number.isFinite(p[k])||p[k]<0)throw new Error('价格必须为非负数');
+        if(next.usage_since&&!validDate(next.usage_since))throw new Error('日期格式无效');
+        for(const p of Object.values(next.prices||{})){
+          for(const k of ['input','cached','write','output'])if(!Number.isFinite(p[k])||p[k]<0)throw new Error('价格必须为非负数');
+          if(p.long_context!=null&&(!Number.isFinite(p.long_context)||p.long_context<=0))throw new Error('长上下文阈值必须为正数');
+        }
         for(const k of ['timezone','usage_since','avatar_initials','prices','quota_alerts'])if(k in next)config[k]=structuredClone(next[k]);
       }
       return structuredClone(config);
@@ -210,12 +246,17 @@ const DemoData = (() => {
       if(!['timeline','projects','sessions','models'].includes(dimension))throw new Error('无效的导出维度');
       let rows=r[dimension];
       if(dimension==='sessions'){
+        if(query.sort&&!['total','known_cost','last_at'].includes(query.sort))throw new Error('无效的会话排序');
         const search=(query.search||'').toLowerCase();rows=rows.filter(s=>[s.title,s.id,...s.model_names,...s.project_names].some(v=>v.toLowerCase().includes(search)));
         rows.sort((a,b)=>query.sort==='last_at'?b.last_at.localeCompare(a.last_at):(b[query.sort||'total']||0)-(a[query.sort||'total']||0));
       }
-      const keys=['date','name','title','total','input','cached','write','output','known_cost','unpriced_tokens'];
-      const cell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
-      return '\ufeff'+[['data_type',...keys],...rows.map(r=>['SIMULATED',...keys.map(k=>r[k])])].map(row=>row.map(cell).join(',')).join('\r\n');
+      const identity={timeline:['date'],projects:['name','id','path','source','source_name'],
+        sessions:['title','id','first_at','last_at','model_names','project_names','source_names'],models:['name']}[dimension];
+      const keys=[...identity,...numbers,'cost',...costs,'cache_rate','priced_ratio','unpriced_tokens','unpriced_events','sessions','events'];
+      const meta=['timezone','range_since','range_until','grain','price_basis','price_verified_at','usage_start'];
+      const cell=v=>{let s=Array.isArray(v)?v.join(' / '):String(v??'');if(/^\s*[=+\-@]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+      const values=[r.timezone,r.range.since,r.range.until,r.range.grain,'current_standard_api_equivalent',r.pricing.verified_at,r.usage_start?.at||''];
+      return '\ufeff'+[['data_type',...keys,...meta],...rows.map(row=>['SIMULATED',...keys.map(k=>row[k]),...values])].map(row=>row.map(cell).join(',')).join('\r\n');
     }
     return {events,report,settings,quota,quotaRange,remotes,csv,acknowledge:id=>{acknowledged.add(id);return quota();}};
   }

@@ -53,6 +53,19 @@ test('model range shortcut applies outside the filter popover without clearing d
   assert.equal(app.context.dashboardState.range,'all','draft changes must wait for Apply');
 });
 
+test('opening settings directly from the quota page loads its missing usage report',()=>{
+  const app=dashboard();
+  vm.runInContext(`
+    state.view='quota';data=null;this.loads=0;
+    render=()=>{};window.scrollTo=()=>{};load=()=>{this.loads++;};
+  `,app.context);
+  app.context.setView('settings');
+  assert.equal(app.context.dashboardState.view,'settings');assert.equal(app.context.loads,1);
+  vm.runInContext('data={};',app.context);
+  app.context.setView('quota');app.context.setView('settings');
+  assert.equal(app.context.loads,1,'already loaded settings must not trigger another scan');
+});
+
 test('late session response cannot replace a newer session',async()=>{
   const app=dashboard();
   const first=app.context.showSession('first');

@@ -3,6 +3,17 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {waterfallRows,dailyPaceSeries}=require('../src/codex_usage/static/usage-insights.js');
 
+test('cache charts retain isolated active days even above the ninety-day dot threshold',()=>{
+  const fs=require('node:fs'),vm=require('node:vm');
+  const context={module:{exports:{}},esc:String,percent:n=>(n*100).toFixed(1)+'%'};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/codex_usage/static/usage-insights.js'),'utf8'),context);
+  const days=Array.from({length:200},(_,i)=>({date:new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),input:i%2?0:100,cached:i%2?0:95}));
+  const svg=context.module.exports.cacheTrend(days);
+  assert.equal((svg.match(/<circle /g)||[]).length,100);
+  assert.equal((svg.match(/95.0%/g)||[]).length,200);
+  assert.ok(!svg.includes('NaN'));
+});
+
 test('waterfall retains signed reconciliation after grouping smaller contributors',()=>{
   const projects=[100,-70,55,40,-30,20,-10,3,1].map((value,i)=>({name:`Project ${i}`,delta_total:value,delta_cost:-value/10}));
   const original=structuredClone(projects);
