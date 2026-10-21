@@ -193,7 +193,7 @@ const DemoData = (() => {
       for(const step of steps){
         if(step.at>quotaNow)break;
         if(!missing.some(g=>step.at>g.since&&step.at<g.until)){
-          samples.push({at:step.at,used_percent:Math.round(target*consumed/totalWeight*10)/10,
+          samples.push({at:step.at,used_percent:Math.round(target*consumed/totalWeight),
             break_before:lastAt===null||step.at-lastAt>1800});lastAt=step.at;
         }
         consumed+=step.weight;
@@ -204,7 +204,7 @@ const DemoData = (() => {
         const fraction=last===quotaNow?(last-steps.findLast(s=>s.at<=last).at)/1800:1;
         const current=steps.findLast(s=>s.at<=last);
         const used=consumed-current.weight*(1-fraction);
-        samples.push({at:last,used_percent:Math.round(target*used/totalWeight*10)/10,break_before:last-lastAt>1800});
+        samples.push({at:last,used_percent:Math.round(target*used/totalWeight),break_before:last-lastAt>1800});
       }
       if(part<resetEvents.length)resetEvents[part].before_used=samples.at(-1).used_percent;
       // Reference derives from the reset deadline, never from actual consumption.
