@@ -52,7 +52,7 @@ const ActivityHeatmap = (() => {
     for(const cell of cells)cell.level=cell.included && cell.value.total>0?Math.max(1,Math.ceil(Math.sqrt(cell.value.total/peak)*4)):0;
     const months=Array.from({length:12},(_,i)=>{
       const key=monthStart(start,i);
-      return {key,label:Number(key.slice(5,7))+'月',column:Math.floor((date(key)-date(gridStart))/(7*dayMs))};
+      return {key,label:globalThis.WebLanguage?.month(key) ?? Number(key.slice(5,7))+'月',column:Math.floor((date(key)-date(gridStart))/(7*dayMs))};
     });
     return {mode,offset,start,end,until,since,weeks,cells,months,summary,
       canPrevious:monthEnd(monthStart(endMonth,-12))>=since,canNext:endMonth<monthStart(until)};

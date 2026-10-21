@@ -719,3 +719,22 @@ body.dark { color-scheme: dark; --bg: #211f1b; --surface: #211f1b; --sidebar: #1
 :root { --quota-gap: #387f9c; }
 body.dark { --quota-gap: #78bddb; }
 .quota-gap-key { display:inline-block; width:24px; border-top:2px dashed var(--quota-gap); vertical-align:middle; }
+
+.treemap-hidden { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:16px 24px 0; }
+.treemap-hidden[hidden] { display:none; }
+.treemap-hidden-chip { display:inline-flex; align-items:center; gap:6px; max-width:100%; border:1px solid var(--line); border-radius:8px; background:var(--soft); padding:3px 4px 3px 10px; }
+.treemap-hidden-chip>span { min-width:0; overflow-wrap:anywhere; }
+.treemap-restore { flex-shrink:0; width:28px; height:28px; border-radius:5px; font-size:20px; line-height:1; }
+.treemap-restore:hover { background:var(--accent-soft); color:var(--accent-ink); }
+
+.price-sync-grid { display:grid; grid-template-columns:minmax(130px,1fr) minmax(0,2fr); gap:12px 20px; margin:20px 0; }
+.price-sync-grid dd { margin:0; overflow-wrap:anywhere; }
+
+/* Keep language controls usable without widening compact layouts. */
+.language-select { max-width: 112px; min-width: 0; padding: 7px 8px; font-size: 13px; }
+html[lang="en-US"] .nav { font-size: 15px; }
+html[lang="en-US"] .nav-subroutes button { font-size: 14px; }
+html[lang="en-US"] .panel-head { flex-wrap: wrap; }
+html[lang="en-US"] .segmented { flex-wrap: wrap; }
+html[lang="en-US"] .metric-label { font-size: 16px; }
+html[lang="en-US"] .top-actions { flex-wrap: wrap; }

@@ -25,6 +25,9 @@ from .remote import RemoteSync, validate_remotes
 from .account import AccountQuota
 from .quota_alerts import DEFAULT_ALERTS
 from .reset_forecast import ResetForecast
+from .price_sync import PriceSync
+from . import web_i18n
+from .pricing import estimate, price_for
 from . import web_background
 from subprocess import TimeoutExpired
 
@@ -133,6 +136,8 @@ class Application:
         self.remote_sync = RemoteSync(self.data_dir / 'remote', self.cache.clear)
         self.account_quota = AccountQuota(history_path=self.data_dir / 'quota-history.sqlite',
                                           timezone_name=self.config['timezone'])
+        self.price_sync = PriceSync(self.data_dir / 'official-prices.json', needed=self.missing_prices,
+                                    used=self.used_models)
         self.reset_forecast = ResetForecast(self.data_dir / 'reset-forecast.json')
         self.index = UsageIndex(self.config["sources"], self.data_dir / "usage.sqlite",
                                 self.config['remotes'], self.remote_sync.directory)
@@ -157,11 +162,24 @@ class Application:
                         self.remote_sync.request(self.config['remotes'])
                         self.cache.get('snapshot', self.index.snapshot, force=True)
                         self.collection.update(last_scan=datetime.now(timezone.utc).isoformat(), problem=None)
+                    self.price_sync.start()
                 except Exception:
                     self.collection['problem'] = '日志采集失败，下次会自动重试；请检查数据目录与磁盘空间。'
                 self.collector_stop.wait(scan_interval)
         self.collector_thread = threading.Thread(target=collect, daemon=True, name='usage-collector')
         self.collector_thread.start()
+
+    def used_models(self):
+        with self.lock:
+            snapshot = self.cache.get("snapshot", self.index.snapshot)
+            return {e["model"] for e in snapshot["events"]}
+
+    def missing_prices(self):
+        with self.lock:
+            snapshot = self.cache.get("snapshot", self.index.snapshot)
+            catalog = self.price_sync.catalog()
+            return {e["model"] for e in snapshot["events"]
+                    if estimate(e, self.config.get("prices"), catalog)["cost"] is None}
 
     def collection_status(self):
         return {**self.collection, 'running': bool(self.collector_thread and self.collector_thread.is_alive()
@@ -172,6 +190,7 @@ class Application:
         if self.collector_thread:
             self.collector_thread.join(timeout=5)
         self.account_quota.close()
+        self.price_sync.close()
 
     def account_status(self):
         return {**self.account_quota.status(), 'usage_collector': self.collection_status()}
@@ -180,7 +199,13 @@ class Application:
         with self.lock:
             self.remote_sync.request(self.config['remotes'])
             snapshot = self.cache.get("snapshot", self.index.snapshot, force=query.get("refresh") == "1")
-            result = report(snapshot, query, self.config)
+            result = report(snapshot, query, {**self.config, "_catalog":self.price_sync.catalog()})
+            result["pricing"]["sync"] = self.price_sync.status()
+            catalog = self.price_sync.catalog()
+            used = sorted({e["model"] for e in snapshot["events"]})
+            result["pricing"]["models"] = {name:price_for(name, self.config.get("prices"), catalog) or {} for name in used}
+            result["pricing"]["missing_models"] = sorted({e["model"] for e in snapshot["events"]
+                if estimate(e, self.config.get("prices"), catalog)["cost"] is None})
             result['remotes'] = self.remote_sync.statuses(self.config['remotes'])
             result['collector'] = self.collection_status()
             return result
@@ -246,6 +271,7 @@ def make_server(app, port=8787):
 
         def send(self, status, body, mime="application/json; charset=utf-8", download=None):
             if isinstance(body, (dict, list)):
+                body = web_i18n.response(body, web_i18n.language(self.headers.get("Cookie")))
                 body = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", mime)
@@ -269,6 +295,7 @@ def make_server(app, port=8787):
             parsed = urlparse(self.path)
             query = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
+                      "/language.js": ("language.js", "text/javascript; charset=utf-8"),
                       "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                       "/model-charts.js": ("model-charts.js", "text/javascript; charset=utf-8"),
                       "/activity-heatmap.js": ("activity-heatmap.js", "text/javascript; charset=utf-8"),
@@ -291,7 +318,8 @@ def make_server(app, port=8787):
                         self.send(404, {'error': '本机未安装该字体，将使用等宽后备字体'})
                 elif parsed.path in assets:
                     name, mime = assets[parsed.path]
-                    self.send(200, (STATIC / name).read_bytes(), mime)
+                    self.send(200, web_i18n.asset((STATIC / name).read_bytes(), name,
+                                                 web_i18n.language(self.headers.get("Cookie"))), mime)
                 elif parsed.path == "/api/health":
                     self.send(200, {"app": "codex-usage", "version": __version__})
                 elif parsed.path == "/api/web-background":
@@ -330,6 +358,20 @@ def make_server(app, port=8787):
             if (not self.allowed() or (origin and origin not in allowed_origins)
                     or not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), app.csrf)):
                 self.send(403, {"error": "请从本机页面保存设置"})
+                return
+            if self.path == '/api/pricing/fetch':
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if not 1 <= size <= 1024:
+                        raise ValueError("请求大小无效")
+                    value = json.loads(self.rfile.read(size))
+                    model = value.get("model") if isinstance(value, dict) else None
+                    if not isinstance(model, str) or model not in app.missing_prices():
+                        raise ValueError("请选择实际使用且缺价的模型")
+                    app.price_sync.request([model])
+                    self.send(202, app.price_sync.status())
+                except (ValueError, TypeError):
+                    self.send(400, {"error":"请选择实际使用且缺价的模型"})
                 return
             if self.path == '/api/web-background':
                 try:

@@ -7,6 +7,12 @@ import json
 from pathlib import Path
 import re
 import shutil
+import importlib.util
+
+# Load only the pure translator; never initialize the application or user data.
+spec = importlib.util.spec_from_file_location('demo_i18n', Path(__file__).resolve().parents[1] / 'src/codex_usage/web_i18n.py')
+i18n = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(i18n)
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / 'src/codex_usage/static'
@@ -16,7 +22,7 @@ OUTPUT = ROOT / 'dist/demo'
 def build():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     # An explicit allowlist prevents accidentally publishing unrelated assets.
-    assets = ['index.html', 'style.css', 'icon.svg', 'app.js', 'model-charts.js',
+    assets = ['index.html', 'language.js', 'style.css', 'icon.svg', 'app.js', 'model-charts.js',
               'activity-heatmap.js', 'project-treemap.js', 'quota-dom.js', 'quota-range.js',
               'usage-insights.js', 'quota-tools.js', 'quota-page.js', 'compact-tables.js', 'hint-help.js']
     for name in assets:
@@ -27,6 +33,7 @@ def build():
     (OUTPUT / 'demo-catalog.js').write_text('const DEMO_CATALOG = '+json.dumps(catalog, ensure_ascii=False)+';\n', encoding='utf-8')
     html = (OUTPUT / 'index.html').read_text(encoding='utf-8')
     html = html.replace('href="/', 'href="./').replace('src="/', 'src="./')
+    html = html.replace('<html lang="zh-CN">', '<html lang="zh-CN" data-demo-root="./">')
     html = html.replace('<script src="./model-charts.js"', '<link rel="stylesheet" href="./demo.css">\n  <script src="./demo-catalog.js" defer></script><script src="./demo-data.js" defer></script><script src="./demo-bridge.js" defer></script>\n  <script src="./model-charts.js"')
     banner = '''<section class="demo-banner" aria-label="模拟演示说明">
       <div><div class="demo-label">INTERACTIVE DEMO</div><strong>随手体验，数据都是模拟的。</strong>
@@ -46,7 +53,6 @@ def build():
         'app.js': [("view:'overview', tab:'summary', range:'30'", "view:'overview', tab:'summary', range:'all'"),
                    ('当前账号的实时额度、重置卡、使用分段和重置动态。', '模拟账号额度、重置记录与消耗曲线，不连接真实账号。'),
                    ('官方价格核对于', '仓库价格快照日期'),
-                   ('GPT-5.6 Sol 当前为促销价，官方注明至少持续至 2026-11-21。', '演示价格仅用于展示计算过程，不保证为最新价格。'),
                    ('单价仅保存在本机', '演示修改仅在当前页面内生效，刷新后恢复'),
                    ("'更新于 ' +", "'模拟数据生成于 ' +")],
         'quota-page.js': [('官方重置预测', '社区预测（演示中停用）')],
@@ -70,7 +76,19 @@ def build():
     html = re.sub(r'(src|href)="\./([^"?]+)(?:\?[^" ]*)?"', version_asset, html)
     (OUTPUT / 'index.html').write_text(html, encoding='utf-8')
     (OUTPUT / '.nojekyll').write_text('', encoding='utf-8')
-    expected = set(assets + ['demo-data.js', 'demo-bridge.js', 'demo.css', 'demo-catalog.js', '.nojekyll'])
+    english = OUTPUT / 'en'
+    english.mkdir(exist_ok=True)
+    for name in assets + ['demo-data.js', 'demo-bridge.js', 'demo.css', 'demo-catalog.js']:
+        localized = i18n.asset((OUTPUT / name).read_bytes(), name, 'en')
+        if name == 'index.html':
+            localized = localized.replace(b'data-demo-root="./"', b'data-demo-root="../"')
+        (english / name).write_bytes(localized)
+    english_html = (english / 'index.html').read_text(encoding='utf-8')
+    english_html = re.sub(r'(src|href)="\./([^"?]+)(?:\?[^" ]*)?"',
+        lambda match: f'{match[1]}="./{match[2]}?v={hashlib.sha256((english / match[2]).read_bytes()).hexdigest()[:12]}"',
+        english_html)
+    (english / 'index.html').write_text(english_html, encoding='utf-8')
+    expected = set(assets + ['demo-data.js', 'demo-bridge.js', 'demo.css', 'demo-catalog.js', '.nojekyll', 'en'])
     actual = {p.name for p in OUTPUT.iterdir()}
     if actual != expected:
         raise ValueError('Unexpected files in dist/demo; inspect before publishing: '+repr(actual - expected))

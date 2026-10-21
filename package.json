@@ -1,6 +1,6 @@
 {
   "name": "codex-usage-local",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Local Codex usage dashboard, customized from physcom/claude-usage-dashboard",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "demo:build": "python scripts/build-demo.py",
     "test:demo": "npm run demo:build && node --test tests/test_demo.cjs",
     "start": "node bin/cli.js",
-    "check": "node --check src/codex_usage/static/app.js && node --check src/codex_usage/static/model-charts.js && node --check src/codex_usage/static/activity-heatmap.js && node --check src/codex_usage/static/project-treemap.js && node --check src/codex_usage/static/usage-insights.js && node --check src/codex_usage/static/quota-page.js && node --check src/codex_usage/static/quota-tools.js && node --check src/codex_usage/static/compact-tables.js && node --check src/codex_usage/static/hint-help.js && node --check src/codex_usage/static/quota-range.js && node --check src/codex_usage/static/quota-dom.js",
+    "check": "node --check src/codex_usage/static/language.js && node --check src/codex_usage/static/app.js && node --check src/codex_usage/static/model-charts.js && node --check src/codex_usage/static/activity-heatmap.js && node --check src/codex_usage/static/project-treemap.js && node --check src/codex_usage/static/usage-insights.js && node --check src/codex_usage/static/quota-page.js && node --check src/codex_usage/static/quota-tools.js && node --check src/codex_usage/static/compact-tables.js && node --check src/codex_usage/static/hint-help.js && node --check src/codex_usage/static/quota-range.js && node --check src/codex_usage/static/quota-dom.js",
     "test": "node --test tests/test_activity_heatmap.cjs tests/test_project_treemap.cjs tests/test_usage_insights.cjs tests/test_dashboard_interactions.cjs tests/test_quota_tools.cjs tests/test_quota_page.cjs tests/test_quota_range.cjs"
   }
 }
