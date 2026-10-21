@@ -1,50 +1,33 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "claude-usage-dashboard"
-dynamic = ["version"]
-description = "Local web dashboard for Claude Code / Codex token usage: cost, cache hit-rate, live 5-hour block, and per-project/session breakdown. Built on top of ccusage."
+name = "codex-usage-local"
+version = "1.1.0"
+description = "Local Codex token dashboard with daily, weekly, project, session and API-equivalent cost reports"
 readme = "README.md"
-requires-python = ">=3.8"
-license = { file = "LICENSE" }
-authors = [{ name = "physcom", email = "elaman.job@gmail.com" }]
-keywords = [
-    "claude", "claude-code", "ccusage", "tokens", "cost",
-    "dashboard", "llm", "observability", "usage", "anthropic",
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Environment :: Web Environment",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Utilities",
-]
-# Runtime has NO Python dependencies (stdlib only). It does require the external
-# `ccusage` CLI (npm) available on PATH — documented in the README.
-dependencies = []
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = ["tzdata==2026.5"]
+keywords = ["codex", "tokens", "usage", "dashboard", "cost"]
 
 [project.urls]
-Homepage = "https://github.com/physcom/claude-usage-dashboard"
-Repository = "https://github.com/physcom/claude-usage-dashboard"
-Issues = "https://github.com/physcom/claude-usage-dashboard/issues"
+Homepage = "https://github.com/KJesko/codex-usage"
+Repository = "https://github.com/KJesko/codex-usage"
+Issues = "https://github.com/KJesko/codex-usage/issues"
+
+[project.optional-dependencies]
+desktop = ["pywebview==6.2.1"]
 
 [project.scripts]
-claude-usage = "claude_usage_dashboard.app:main"
-claude-usage-dashboard = "claude_usage_dashboard.app:main"
+codex-usage = "codex_usage.app:main"
 
-[tool.hatch.version]
-path = "src/claude_usage_dashboard/app.py"
-pattern = "VERSION = \"(?P<version>[^\"]+)\""
+[project.gui-scripts]
+codex-usage-desktop = "codex_usage.desktop:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/claude_usage_dashboard"]
+packages = ["src/codex_usage"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+include = ["/src/codex_usage", "/README.md", "/LICENSE", "/NOTICE", "/requirements*.txt", "/tests", "/codex_usage*.py", "/run.ps1", "/run.bat", "/build-windows.ps1", "/CodexUsage.spec", "/packaging", "/scripts"]

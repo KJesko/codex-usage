@@ -1,43 +1,19 @@
 {
-  "name": "claude-usage-dashboard",
-  "version": "0.1.0",
-  "description": "Local web dashboard for Claude Code / Codex token usage: cost, cache hit-rate, live 5-hour block, and per-project/session breakdown. Built on top of ccusage.",
-  "keywords": [
-    "claude",
-    "claude-code",
-    "ccusage",
-    "tokens",
-    "cost",
-    "dashboard",
-    "llm",
-    "observability",
-    "anthropic"
-  ],
-  "homepage": "https://github.com/physcom/claude-usage-dashboard#readme",
-  "bugs": {
-    "url": "https://github.com/physcom/claude-usage-dashboard/issues"
-  },
+  "name": "codex-usage-local",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Local Codex usage dashboard, customized from physcom/claude-usage-dashboard",
+  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/physcom/claude-usage-dashboard.git"
+    "url": "https://github.com/KJesko/codex-usage.git"
   },
-  "license": "MIT",
-  "author": "physcom <elaman.job@gmail.com>",
+  "homepage": "https://github.com/KJesko/codex-usage#readme",
+  "bugs": "https://github.com/KJesko/codex-usage/issues",
   "type": "commonjs",
-  "bin": {
-    "claude-usage-dashboard": "bin/cli.js",
-    "claude-usage": "bin/cli.js"
-  },
-  "files": [
-    "bin/",
-    "src/",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "node": ">=16"
-  },
   "scripts": {
-    "start": "node bin/cli.js"
+    "start": "node bin/cli.js",
+    "check": "node --check src/codex_usage/static/app.js && node --check src/codex_usage/static/model-charts.js && node --check src/codex_usage/static/activity-heatmap.js && node --check src/codex_usage/static/project-treemap.js && node --check src/codex_usage/static/usage-insights.js && node --check src/codex_usage/static/quota-page.js && node --check src/codex_usage/static/quota-tools.js && node --check src/codex_usage/static/compact-tables.js && node --check src/codex_usage/static/hint-help.js && node --check src/codex_usage/static/quota-range.js && node --check src/codex_usage/static/quota-dom.js",
+    "test": "node --test tests/test_activity_heatmap.cjs tests/test_project_treemap.cjs tests/test_usage_insights.cjs tests/test_dashboard_interactions.cjs tests/test_quota_tools.cjs tests/test_quota_page.cjs tests/test_quota_range.cjs"
   }
 }

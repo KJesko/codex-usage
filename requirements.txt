@@ -1,0 +1,2 @@
+# IANA timezone database for Windows. No runtime web / analytics dependencies.
+tzdata==2026.5

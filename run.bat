@@ -1,4 +1,3 @@
 @echo off
-REM Dev convenience launcher (runs from source without installing).
-python "%~dp0src\claude_usage_dashboard\app.py" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run.ps1" %*
 if errorlevel 1 pause

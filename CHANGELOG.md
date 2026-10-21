@@ -3,7 +3,20 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] — 2026-07-02
+## [1.1.0] — 2026-10-21
+
+Initial public source publication of the Codex Usage customization.
+
+### Added
+- Chinese Codex dashboard with daily, weekly, monthly, project, session and model reports.
+- Local log indexing, deduplication, timezone-aware aggregation and API-equivalent cost estimates.
+- SSH synchronization, quota history, reset observations, alerts and CSV export.
+- Windows desktop build scripts and optional background startup and recovery.
+- Python and JavaScript tests, cross-platform CI, installation and contribution documentation.
+
+The entries below describe the original upstream project, not releases of this customization.
+
+## Upstream [0.1.0] — 2026-07-02
 
 Initial public release.
 
