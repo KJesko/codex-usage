@@ -1,0 +1,179 @@
+/* Synthetic data only. This module never reads files, credentials or accounts. */
+'use strict';
+const DemoData = (() => {
+  const DAY = 86400000;
+  const numbers = ['input','uncached','cached','write','output','reasoning','total'];
+  const costs = ['known_cost','input_cost','cached_cost','write_cost','output_cost','cache_savings'];
+  const iso = value => new Date(value).toISOString();
+  const offset = (day,n) => iso(Date.parse(day+'T12:00:00Z')+n*DAY).slice(0,10);
+  const formatters = new Map();
+  const dayIn = (value,zone) => {
+    if(!formatters.has(zone))formatters.set(zone,new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}));
+    return formatters.get(zone).format(new Date(value));
+  };
+  function create(catalog, now=Date.now()) {
+    let seed=20261021;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const projects=[
+      ['atlas-web','Atlas 商城','local','演示笔记本'],
+      ['orbit-api','Orbit API','ssh:dev','演示开发机'],
+      ['design-system','设计系统','local','演示笔记本'],
+      ['research-notes','研究笔记','ssh:lab','演示实验机'],
+      ['mobile-app','移动客户端','local','演示笔记本'],
+      ['data-pipeline','数据流水线','ssh:lab','演示实验机']
+    ];
+    const models=['gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-5.3-codex'];
+    const tasks=['实现搜索与筛选','修复边界条件','补充单元测试','优化缓存策略','整理接口文档','重构数据访问层','打磨响应式界面','分析性能瓶颈'];
+    const events=[];
+    const base=Date.parse(iso(now).slice(0,10)+'T00:00:00Z');
+    for(let ago=364;ago>=0;ago--){
+      const weekend=[0,6].includes(new Date(base-ago*DAY).getUTCDay());
+      const count=ago===0?6:weekend?Math.floor(random()*3):3+Math.floor(random()*5);
+      for(let s=0;s<count;s++){
+        const p=projects[Math.floor(random()*projects.length)];
+        const model=models[Math.floor(random()*models.length)];
+        const session=`demo-${String(364-ago).padStart(3,'0')}-${s}`;
+        for(let turn=0;turn<3;turn++){
+          const input=Math.round((18000+random()*65000)*(ago<45?1.45:1));
+          const cached=Math.floor(input*(.35+random()*.42)),write=Math.floor(input*.035);
+          const output=Math.round(2000+random()*11000);
+          // Today's events always precede the visitor's current time.
+          const at=ago===0?now-(count-s)*600000+turn*90000:base-ago*DAY+(s+8)*3600000+turn*90000;
+          events.push({at:iso(at),session,title:tasks[(s+ago)%tasks.length]+' · '+p[1],
+            project:p[0],project_name:p[1],project_path:'/demo/projects/'+p[0],source:p[2],source_name:p[3],
+            account:ago%7===0?'demo-team':'demo-personal',model:ago===12&&s===0?'demo-experimental':model,
+            input,uncached:input-cached-write,cached,write,output,reasoning:Math.floor(output*.28),total:input+output,
+            context_input:turn===2&&s===0?300000:input});
+        }
+      }
+    }
+    events.sort((a,b)=>a.at.localeCompare(b.at));
+    const config={timezone:'Asia/Shanghai',sources:['/demo/codex'],usage_since:'',avatar_initials:'DM',prices:{},csrf:'demo-only',
+      quota_alerts:{enabled:true,remaining_percent:20,predictive:true},
+      remotes:[{id:'dev',name:'演示开发机',host:'dev.example.invalid',path:'/demo/codex',interval:120,enabled:true},
+        {id:'lab',name:'演示实验机',host:'lab.example.invalid',path:'/demo/codex',interval:120,enabled:true}]};
+    const remotes=()=>config.remotes.map(r=>({...r,busy:false,error:null,files:120,synced_at:iso(now),root:r.path}));
+    function priced(e){
+      const rates={...catalog.models,...config.prices};
+      const rate=config.prices[e.model]||rates[catalog.aliases?.[e.model]||e.model];
+      if(!rate)return {...e,cost:null,input_cost:null,cached_cost:null,write_cost:null,output_cost:null,cache_savings:null};
+      const long=rate.long_context&&e.context_input>rate.long_context,im=long?2:1,om=long?1.5:1;
+      const parts={input_cost:e.uncached*rate.input*im/1e6,cached_cost:e.cached*rate.cached*im/1e6,
+        write_cost:e.write*rate.write*im/1e6,output_cost:e.output*rate.output*om/1e6};
+      return {...e,...parts,cost:Object.values(parts).reduce((a,b)=>a+b,0),cache_savings:e.cached*(rate.input-rate.cached)*im/1e6};
+    }
+    function sum(rows){
+      const b=Object.fromEntries([...numbers,...costs].map(k=>[k,0]));
+      b.events=rows.length;b.unpriced_events=0;b.unpriced_tokens=0;
+      for(const e of rows){
+        for(const k of numbers)b[k]+=e[k];
+        if(e.cost==null){b.unpriced_events++;b.unpriced_tokens+=e.total;}
+        else{b.known_cost+=e.cost;for(const k of costs.slice(1))b[k]+=e[k];}
+      }
+      return {...b,cost:b.unpriced_events?null:b.known_cost,cache_rate:b.input?b.cached/b.input:0,
+        priced_ratio:b.total?1-b.unpriced_tokens/b.total:1,sessions:new Set(rows.map(e=>e.session)).size,projects:new Set(rows.map(e=>e.project)).size};
+    }
+    function grouped(rows,key,details){
+      const groups=new Map();
+      for(const e of rows){const k=key(e);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);}
+      return [...groups].map(([k,values])=>({...sum(values),...details(k,values)}));
+    }
+    function report(query={}){
+      const zone=config.timezone,today=dayIn(now,zone),grain=query.grain||'day';
+      if(!['day','week','month'].includes(grain))throw new Error('无效的统计粒度');
+      const end=query.until||today;
+      const available=events.filter(e=>!config.usage_since||dayIn(e.at,zone)>=config.usage_since);
+      const start=[query.since||dayIn(available[0]?.at||now,zone),config.usage_since||''].sort().at(-1);
+      if(start>end)throw new Error('开始日期不能晚于结束日期');
+      if((Date.parse(end)-Date.parse(start))/DAY>3660)throw new Error('请缩短日期范围');
+      const dimension=available.filter(e=>['project','model','session','account','source'].every(k=>!query[k]||e[k]===query[k])).map(priced);
+      const rows=dimension.filter(e=>{const d=dayIn(e.at,zone);return d>=start&&d<=end;});
+      const bucket=day=>grain==='month'?day.slice(0,7)+'-01':grain==='week'?offset(day,-((new Date(day+'T12:00:00Z').getUTCDay()+6)%7)):day;
+      const days=new Map();for(let d=start;d<=end;d=offset(d,1))days.set(d,[]);
+      for(const e of rows)days.get(dayIn(e.at,zone)).push(e);
+      const timeline=new Map();for(const [day,es] of days){const k=bucket(day);if(!timeline.has(k))timeline.set(k,[]);timeline.get(k).push(...es);}
+      const sort=rows=>rows.sort((a,b)=>b.total-a.total);
+      const monday=offset(today,-((new Date(today+'T12:00:00Z').getUTCDay()+6)%7));
+      const select=(since,until=today)=>sum(dimension.filter(e=>{const d=dayIn(e.at,zone);return since<=d&&d<=until;}));
+      const span=query.period==='week'?7:Math.round((Date.parse(end)-Date.parse(start))/DAY)+1;
+      const prevStart=offset(start,-span),prevEnd=offset(end,-span),canCompare=prevStart>=dayIn(available[0]?.at||now,zone);
+      const prev=dimension.filter(e=>{const d=dayIn(e.at,zone);return d>=prevStart&&d<=prevEnd&&(end!==today||d!==prevEnd||Date.parse(e.at)<now-span*DAY);});
+      const current=rows.filter(e=>end!==today||Date.parse(e.at)<now);
+      const attribution=(key,name)=>{
+        const ids=new Set([...prev,...current].map(e=>e[key]));
+        return [...ids].map(id=>{const a=prev.filter(e=>e[key]===id),b=current.filter(e=>e[key]===id),x=sum(a),y=sum(b),sample=b[0]||a[0];
+          return {id,name:sample[name],source_name:key==='project'?sample.source_name:'',previous_total:x.total,current_total:y.total,
+            previous_cost:x.known_cost,current_cost:y.known_cost,delta_total:y.total-x.total,delta_cost:y.known_cost-x.known_cost};});
+      };
+      const midnight=day=>day+'T00:00:00';
+      return {summary:sum(rows),today:select(today),week:select(monday),month:select(today.slice(0,7)+'-01'),
+        timeline:[...timeline].map(([date,es])=>({date,...sum(es)})),
+        model_timeline:[...days].map(([date,es])=>({date,models:grouped(es,e=>e.model,name=>({name}))})),
+        projects:sort(grouped(rows,e=>e.project,(id,es)=>({id,name:es[0].project_name,path:es[0].project_path,source:es[0].source,source_name:es[0].source_name}))),
+        sessions:sort(grouped(rows,e=>e.session,(id,es)=>({id,title:es[0].title,first_at:es[0].at,last_at:es.at(-1).at,
+          model_names:[...new Set(es.map(e=>e.model))],project_names:[...new Set(es.map(e=>e.project_name))],source_names:[...new Set(es.map(e=>e.source_name))]}))),
+        models:sort(grouped(rows,e=>e.model,name=>({name}))),
+        options:{projects:projects.map(([id,name,source])=>({id,name,source,path:'/demo/projects/'+id})),models:[...new Set(available.map(e=>e.model))].sort(),
+          accounts:[...new Set(available.map(e=>e.account))].sort(),sources:[{id:'local',name:'演示笔记本'},...config.remotes.map(r=>({id:'ssh:'+r.id,name:r.name}))]},
+        comparison:{available:canCompare,reason:canCompare?null:'模拟数据未覆盖完整上期，请选择较近的日期。',current:sum(current),previous:canCompare?sum(prev):null,
+          current_range:{since:midnight(start),until:end===today?iso(now):midnight(offset(end,1))},previous_range:{since:midnight(prevStart),until:end===today?iso(now-span*DAY):midnight(offset(prevEnd,1))},
+          basis:query.period==='week'?'上周同期':'上一等长时段',partial_day:end===today,projects:canCompare?attribution('project','project_name'):[],models:canCompare?attribution('model','model'):[]},
+        coverage:{sessions:new Set(events.map(e=>e.session)).size,metadata_sessions:new Set(events.map(e=>e.session)).size,files:new Set(events.map(e=>e.session)).size,
+          missing_sessions:0,retained_files:0,scan_ms:0,warnings:{},issues:[]},limits:[],missing_projects:[],scanned_at:iso(now),timezone:zone,
+        usage_start:config.usage_since?{date:config.usage_since,timezone:zone}:null,range:{since:start,until:end,today,grain},
+        pricing:{...catalog,models:{...catalog.models,...config.prices},overrides:Object.keys(config.prices),unknown_models:[...new Set(rows.filter(e=>e.cost==null).map(e=>e.model))]},
+        remotes:remotes(),collector:{running:false,last_scan:iso(now),scan_interval_seconds:30}};
+    }
+    const quotaNow=now/1000,anchor=Math.floor(quotaNow/86400)*86400;
+    const resetEvents=[['scheduled',6,93],['official',4,68],['credit',2,82]].map(([kind,ago,before],i)=>({id:'demo-reset-'+i,kind,label:'每周额度',
+      at:anchor-ago*86400+36000,since:anchor-ago*86400+35940,confirmed_at:anchor-ago*86400+36060,before_used:before,after_used:0,
+      old_reset:anchor+3*86400,new_reset:anchor+3*86400,before_count:3,after_count:2}));
+    const acknowledged=new Set();
+    function quota(){return {account:{label:'演示账号 · 非真实数据',plan:'pro'},windows:[
+      {id:'codex:primary',bucket:'codex',label:'每周额度',used_percent:63,remaining_percent:37,resets_at:anchor+3*86400,window_minutes:10080},
+      {id:'codex:secondary',bucket:'codex',label:'5 小时额度',used_percent:28,remaining_percent:72,resets_at:quotaNow+7200,window_minutes:300}],
+      reset_credits:{available_count:2,details:[{expires_at:quotaNow+15*86400},{expires_at:quotaNow+28*86400}]},reset_events:resetEvents,
+      fetched_at:iso(now),busy:false,stale:false,history_scope:'demo-account',history_available:true,
+      collector:{running:false,interval_seconds:60,failures:0,last_success:iso(now)},alerts:[{id:'demo-alert',at:quotaNow-3600,active:false,
+        acknowledged:acknowledged.has('demo-alert'),message:'模拟历史提醒：上一使用段剩余额度低于 20%。'}]};}
+    function quotaRange(){
+      const begin=anchor-13*86400,end=anchor+86400,samples=[],references=[];
+      const boundaries=[begin,...resetEvents.map(e=>e.at),end];
+      for(let part=0;part<boundaries.length-1;part++){
+        const since=boundaries[part],until=Math.min(boundaries[part+1]-1,quotaNow),target=[93,68,82,63][part];
+        if(until<since)continue;
+        for(let at=since;at<until;at+=1800){const progress=(at-since)/(until-since);samples.push({at,used_percent:Math.round(target*progress**1.18*10)/10,break_before:at===since});}
+        samples.push({at:until,used_percent:target});references.push({since,until,before:0,after:target});
+      }
+      const ticks=[];for(let at=begin;at<=end;at+=86400)ticks.push({at,date:dayIn(at*1000,config.timezone)});
+      return {custom_range:true,history_scope:'demo-account',timezone:config.timezone,grain:'auto',
+        range:{since:begin,until:end,since_date:ticks[0].date,until_date:ticks.at(-2).date},ticks,
+        groups:[{id:'demo-week',label:'每周额度（模拟）',plan:'pro',window:'codex:primary',sample_count:samples.length,segment_count:4,
+          samples,references,idle:[],events:resetEvents}]};
+    }
+    function settings(next){
+      if(next){
+        new Intl.DateTimeFormat('en',{timeZone:next.timezone});
+        if(next.usage_since&&!/^\d{4}-\d{2}-\d{2}$/.test(next.usage_since))throw new Error('日期格式无效');
+        for(const p of Object.values(next.prices||{}))for(const k of ['input','cached','write','output'])if(!Number.isFinite(p[k])||p[k]<0)throw new Error('价格必须为非负数');
+        for(const k of ['timezone','usage_since','avatar_initials','prices','quota_alerts'])if(k in next)config[k]=structuredClone(next[k]);
+      }
+      return structuredClone(config);
+    }
+    function csv(query={}){
+      const r=report(query),dimension=query.dimension||'timeline';
+      if(!['timeline','projects','sessions','models'].includes(dimension))throw new Error('无效的导出维度');
+      let rows=r[dimension];
+      if(dimension==='sessions'){
+        const search=(query.search||'').toLowerCase();rows=rows.filter(s=>[s.title,s.id,...s.model_names,...s.project_names].some(v=>v.toLowerCase().includes(search)));
+        rows.sort((a,b)=>query.sort==='last_at'?b.last_at.localeCompare(a.last_at):(b[query.sort||'total']||0)-(a[query.sort||'total']||0));
+      }
+      const keys=['date','name','title','total','input','cached','write','output','known_cost','unpriced_tokens'];
+      const cell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+      return '\ufeff'+[['data_type',...keys],...rows.map(r=>['SIMULATED',...keys.map(k=>r[k])])].map(row=>row.map(cell).join(',')).join('\r\n');
+    }
+    return {events,report,settings,quota,quotaRange,remotes,csv,acknowledge:id=>{acknowledged.add(id);return quota();}};
+  }
+  return {create};
+})();
+if(typeof module!=='undefined')module.exports=DemoData;
