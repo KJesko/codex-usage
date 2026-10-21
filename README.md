@@ -9,6 +9,37 @@ Python 后端 + 原生 JavaScript 前端，无需前端构建。支持浏览器�
 
 > 本项目是独立社区工具，与 OpenAI 无隶属关系。统计来自可读取的本地或远程日志；API 等价成本是估算值，不代表订阅账单、实际付款或账号的固定 Token 配额。
 
+## 在线体验与界面预览
+
+**[打开在线交互演示 →](https://kjesko.github.io/codex-usage/)** · 无需安装或登录。
+
+演示站复用真实应用的前端，在浏览器中生成 **365 天、6 个虚构项目、3 台模拟机器**的用量。可以切换日期、机器和模型，展开项目 / 会话详情，查看成本与缓存收益，体验额度曲线并导出模拟 CSV。
+
+建议依次体验：[全年活动总览](https://kjesko.github.io/codex-usage/) → [近 30 天详细分析](https://kjesko.github.io/codex-usage/?view=overview&tab=analysis&range=30) → [项目分析](https://kjesko.github.io/codex-usage/?view=projects&range=30) → [额度与重置](https://kjesko.github.io/codex-usage/?view=quota)。
+
+所有账号、用量、费用、额度及下方截图均为**模拟数据**。演示站不会读取访客的 Codex 文件、连接真实账号或 SSH，也不启动后台任务。价格与统计设置仅在当前页面内生效，刷新或点击「重置演示」即可恢复；主题偏好保存在浏览器中。导出的文件名称和内容均带有演示标记。
+
+**用量总览：** 汇总 Token、API 等价成本、缓存命中率和会话数量，按全年活动热图查看使用节奏。
+
+[![Codex Usage 用量总览，全部为模拟数据](docs/screenshots/demo-overview.png)](https://kjesko.github.io/codex-usage/)
+
+<details>
+<summary>更多截图：项目分析、模型对比、额度与重置</summary>
+
+**项目分析：** 用矩形树图比较项目占比，点击项目查看每日趋势和所属会话。
+
+![项目分析与缓存收益，全部为模拟数据](docs/screenshots/demo-projects.png)
+
+**模型分析：** 对比模型的每日用量，切换 Token / 成本视图，查看未定价模型和缓存收益。
+
+![模型每日用量对比，全部为模拟数据](docs/screenshots/demo-models.png)
+
+**额度与重置：** 查看模拟额度窗口、消耗曲线和三种重置事件，支持缩放及日期范围选择。
+
+![额度曲线和重置记录，全部为模拟数据](docs/screenshots/demo-quota.png)
+
+</details>
+
 ## 功能
 
 | 功能 | 说明 |
@@ -206,6 +237,18 @@ packaging/                  Windows 打包配置
 ```
 
 欢迎通过 [Issues](https://github.com/KJesko/codex-usage/issues) 报告问题或提交 Pull Request。复现信息和测试数据请先脱敏，具体流程见 [贡献指南](CONTRIBUTING.md)。
+
+### 维护在线演示
+
+```sh
+python scripts/build-demo.py
+node --test tests/test_demo.cjs
+python -m http.server 8791 --bind 127.0.0.1 --directory dist
+```
+
+打开 <http://127.0.0.1:8791/demo/>。构建只复制明确列出的前端文件和价格快照，不启动 Python 应用，也不读取任何用户日志或配置。模拟数据与浏览器适配代码位于 `demo/`，生成目录 `dist/demo/` 不提交到 Git。
+
+推送到 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 自动构建、验证并部署。Fork 后如需自行发布，请在仓库 Settings → Pages 中选择 GitHub Actions，并更新 README 和演示页中的项目链接。
 
 ## 来源与许可证
 
