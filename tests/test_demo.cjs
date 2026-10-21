@@ -64,9 +64,19 @@ test('custom prices recalculate only simulated data and CSV follows search and f
 test('quota fixture has ordered samples, bounded percentages, reset breaks and acknowledgement',()=>{
   const demo=create(catalog,now),q=demo.quotaRange(),g=q.groups[0];
   assert.equal(g.events.length,3);assert.ok(g.samples.length>100);
-  assert.ok(g.samples.every((s,i)=>s.used_percent>=0&&s.used_percent<=100&&(!i||s.at>g.samples[i-1].at)));
+  assert.ok(g.samples.every((s,i)=>Number.isInteger(s.used_percent)&&s.used_percent>=0&&s.used_percent<=100&&(!i||s.at>g.samples[i-1].at)));
   for(const e of g.events)assert.ok(g.samples.some(s=>s.at===e.at&&s.break_before));
   assert.equal(g.samples.at(-1).used_percent,demo.quota().windows[0].used_percent);
+  for(const time of ['2026-10-21T02:17:39Z','2026-10-21T07:43:21Z','2026-10-21T15:30:00Z']){
+    const snapshot=create(catalog,Date.parse(time)),account=snapshot.quota(),history=snapshot.quotaRange().groups[0];
+    assert.ok(history.samples.every(s=>Number.isInteger(s.used_percent)));
+    assert.ok(account.reset_events.every(e=>Number.isInteger(e.before_used)&&Number.isInteger(e.after_used)));
+    for(const w of account.windows){
+      assert.ok(Number.isInteger(w.used_percent)&&Number.isInteger(w.remaining_percent));
+      assert.equal(w.used_percent+w.remaining_percent,100);
+    }
+    assert.equal(account.windows[0].used_percent,history.samples.at(-1).used_percent);
+  }
   assert.equal(demo.acknowledge('demo-alert').alerts[0].acknowledged,true);
 });
 
