@@ -192,6 +192,8 @@ class UsageTest(unittest.TestCase):
         self.config.update(timezone='Asia/Shanghai', usage_since='2026-10-14')
         r = self.report({'since':'2026-10-01', 'until':'2026-10-16', 'grain':'month'})
         daily = r['model_timeline']
+        # One session switching models must not count twice; zero days stay zero.
+        self.assertEqual([d['sessions'] for d in daily], [1, 1, 0])
         self.assertEqual([d['date'] for d in daily], ['2026-10-14','2026-10-15','2026-10-16'])
         self.assertEqual([{m['name']:m['total'] for m in d['models']} for d in daily], [
             {'gpt-6-astra':200, 'gpt-6.1-sol':300},

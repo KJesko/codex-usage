@@ -19,8 +19,8 @@ const HintHelp=(()=>{
   }
   const helpTitle=label=>label.endsWith('说明')?label:label+'说明';
   function placement(source){
-    const field=source.closest('label.field');
-    if(field)return {anchor:field.querySelector(':scope>span'),label:caption(field.querySelector(':scope>span'))};
+    const field=source.closest('.field');
+    if(field){const anchor=field.querySelector(':scope>span,:scope>label');if(anchor)return {anchor,label:caption(anchor)};}
     const metric=source.closest('.metric');
     if(metric)return {anchor:metric.querySelector('.metric-label'),label:caption(metric.querySelector('.metric-label'))};
     if(source.id==='pageSubtitle')return {anchor:document.getElementById('pageTitle'),label:caption(document.getElementById('pageTitle'))};

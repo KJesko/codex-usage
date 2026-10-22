@@ -28,6 +28,19 @@ test('weeks start Monday and aggregate only the included part of a week',()=>{
     ['2026-10-12','2026-10-14','2026-10-18',300],['2026-10-19','2026-10-19','2026-10-20',50]]);
   assert.ok(Math.abs(weeks[0].value.known_cost-.3)<1e-10);
 });
+
+test('daily details preserve input breakdown and distinct sessions without summing session counts',()=>{
+  const r=report('2026-10-14','2026-10-15',[
+    ['2026-10-14',{total:110,input:100,cached:80,output:10,sessions:1},
+      {total:55,input:50,cached:40,output:5,sessions:1}],['2026-10-15']]);
+  r.model_timeline[0].sessions=1;
+  r.model_timeline[1].sessions=0;
+  const values=build(r).cells.filter(c=>c.included).map(c=>c.value);
+  assert.deepEqual([values[0].input,values[0].cached,values[0].output,values[0].sessions],[150,120,15,1]);
+  assert.equal(values[1].sessions,0);
+  assert.equal(build(r,'week').cells.find(c=>c.included).value.sessions,undefined);
+  assert.equal(build(r,'cumulative').cells.find(c=>c.included).value.sessions,undefined);
+});
 test('cumulative includes earlier windows and preserves totals on zero days',()=>{
   const r=report('2025-01-01','2026-10-15',[
     ['2025-01-01',cell(100,.1)],['2026-10-14',cell(50,.05)],['2026-10-15']]);

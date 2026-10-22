@@ -27,6 +27,11 @@ from .quota_alerts import DEFAULT_ALERTS
 from .reset_forecast import ResetForecast
 from .price_sync import PriceSync
 from . import web_i18n
+from .setup_check import check_sources, setup_status
+from .background_config import identity
+from .source_picker import browse_directory
+from .account_profile import AccountProfile
+from .browser_login import BrowserLogin
 from .pricing import estimate, price_for
 from . import web_background
 from subprocess import TimeoutExpired
@@ -84,8 +89,9 @@ def validate_settings(value):
             raise ValueError("统计起始日期必须为有效的 YYYY-MM-DD 日期") from None
     avatar_initials = value.get("avatar_initials", "CU")
     if (not isinstance(avatar_initials, str) or not 1 <= len(avatar_initials) <= 3
-            or not avatar_initials.isascii() or not avatar_initials.isalnum()):
-        raise ValueError("头像字母请填写 1 至 3 个英文字母或数字")
+            or not all((c.isascii() and c.isalnum()) or '\u3400' <= c <= '\u9fff'
+                       for c in avatar_initials)):
+        raise ValueError("头像请填写 1 至 3 个英文字母、数字或汉字")
     roots = value.get("sources", [])
     if not isinstance(roots, list) or not roots or len(roots) > 20:
         raise ValueError("请设置 1 至 20 个 Codex 数据目录")
@@ -136,6 +142,8 @@ class Application:
         self.remote_sync = RemoteSync(self.data_dir / 'remote', self.cache.clear)
         self.account_quota = AccountQuota(history_path=self.data_dir / 'quota-history.sqlite',
                                           timezone_name=self.config['timezone'])
+        self.browser_login = BrowserLogin(self.login_completed)
+        self.account_profile = AccountProfile()
         self.price_sync = PriceSync(self.data_dir / 'official-prices.json', needed=self.missing_prices,
                                     used=self.used_models)
         self.reset_forecast = ResetForecast(self.data_dir / 'reset-forecast.json')
@@ -148,6 +156,14 @@ class Application:
         self.collection = {'started_at': None, 'last_scan': None, 'problem': None}
         self.scan_interval = 30
         self.account_quota.configure(self.config['timezone'], self.config['quota_alerts'])
+
+    def login_completed(self):
+        self.account_profile.invalidate()
+        connection = self.account_quota.connection
+        if connection:
+            with connection.lock:
+                connection._disconnect()
+        self.account_quota.request(force=True)
 
     def start_collecting(self, scan_interval=30):
         if self.collector_thread is not None:
@@ -189,11 +205,14 @@ class Application:
         self.collector_stop.set()
         if self.collector_thread:
             self.collector_thread.join(timeout=5)
+        self.browser_login.close()
+        self.account_profile.close()
         self.account_quota.close()
         self.price_sync.close()
 
     def account_status(self):
-        return {**self.account_quota.status(), 'usage_collector': self.collection_status()}
+        return {**self.account_quota.status(), 'usage_collector': self.collection_status(),
+                'browser_login':self.browser_login.status(), 'profile':self.account_profile.status()}
 
     def data(self, query):
         with self.lock:
@@ -321,11 +340,13 @@ def make_server(app, port=8787):
                     self.send(200, web_i18n.asset((STATIC / name).read_bytes(), name,
                                                  web_i18n.language(self.headers.get("Cookie"))), mime)
                 elif parsed.path == "/api/health":
-                    self.send(200, {"app": "codex-usage", "version": __version__})
+                    self.send(200, {"app": "codex-usage", "version": __version__, 'instance': identity(app.data_dir)})
                 elif parsed.path == "/api/web-background":
-                    self.send(200, {**web_background.status(), "collector": app.account_status().get("collector", {})})
+                    self.send(200, {**web_background.status(data_dir=app.data_dir, port=self.server.server_port), "collector": app.account_status().get("collector", {})})
                 elif parsed.path == "/api/settings":
-                    self.send(200, {**app.config, "csrf": app.csrf})
+                    self.send(200, {**app.config, "csrf": app.csrf,
+                                   'setup': setup_status(app.config['sources'], app.data_dir, self.server.server_port,
+                                                         not app.config_path.exists())})
                 elif parsed.path == '/api/account':
                     app.account_quota.request()
                     self.send(200, app.account_status())
@@ -333,7 +354,7 @@ def make_server(app, port=8787):
                     self.send(200, app.account_quota.historical_cycle(query.get('cycle', '')))
                 elif parsed.path == '/api/account/range':
                     self.send(200, app.account_quota.historical_range(query.get('since', ''), query.get('until', ''), query.get('grain', 'hour')))
-                elif parsed.path == '/api/reset-forecast':
+                elif parsed.path in ('/api/reset-updates', '/api/reset-forecast'):
                     app.reset_forecast.request()
                     self.send(200, app.reset_forecast.status())
                 elif parsed.path == "/api/remotes":
@@ -359,6 +380,38 @@ def make_server(app, port=8787):
                     or not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), app.csrf)):
                 self.send(403, {"error": "请从本机页面保存设置"})
                 return
+            if self.path in ('/api/account/login', '/api/account/login/cancel'):
+                if self.path.endswith('/cancel'):
+                    app.browser_login.cancel()
+                else:
+                    app.account_profile.invalidate()
+                    app.browser_login.start()
+                self.send(202, app.browser_login.status())
+                return
+            if self.path == '/api/setup/browse':
+                try:
+                    size = int(self.headers.get('Content-Length', '0'))
+                    if not 1 <= size <= 20000:
+                        raise ValueError('请求大小无效')
+                    value = json.loads(self.rfile.read(size))
+                    if not isinstance(value, dict):
+                        raise ValueError('请求大小无效')
+                    self.send(200, browse_directory(value.get('path')))
+                except (ValueError, TypeError) as exc:
+                    self.send(400, {'error':str(exc)})
+                return
+            if self.path == '/api/setup/check':
+                try:
+                    size = int(self.headers.get('Content-Length', '0'))
+                    if not 1 <= size <= 100000:
+                        raise ValueError('请求大小无效')
+                    value = json.loads(self.rfile.read(size))
+                    self.send(200, {'sources':check_sources(value.get('sources') if isinstance(value, dict) else None)})
+                except (json.JSONDecodeError, TypeError):
+                    self.send(400, {'error':'请设置 1 至 20 个 Codex 数据目录'})
+                except ValueError as exc:
+                    self.send(400, {'error':str(exc)})
+                return
             if self.path == '/api/pricing/fetch':
                 try:
                     size = int(self.headers.get("Content-Length", "0"))
@@ -381,7 +434,9 @@ def make_server(app, port=8787):
                     value = json.loads(self.rfile.read(size))
                     if not isinstance(value, dict) or set(value) != {"enabled"}:
                         raise ValueError("只允许修改自动启动与恢复开关")
-                    result = web_background.configure(value["enabled"])
+                    if value['enabled']:
+                        app.save(app.config)  # Persist command-line source/timezone overrides before supervision.
+                    result = web_background.configure(value["enabled"], data_dir=app.data_dir, port=self.server.server_port)
                     self.send(200, {**result, "collector": app.account_status().get("collector", {})})
                 except (ValueError, TypeError) as exc:
                     self.send(400, {"error": str(exc)})
@@ -392,6 +447,7 @@ def make_server(app, port=8787):
                 self.send(202, {'ok': True, 'remotes': app.sync_remotes()})
                 return
             if self.path == '/api/account/refresh':
+                app.account_profile.invalidate()
                 app.account_quota.request(force=True)
                 self.send(202, app.account_status())
                 return

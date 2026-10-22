@@ -55,7 +55,7 @@ def build():
                    ('官方价格核对于', '仓库价格快照日期'),
                    ('单价仅保存在本机', '演示修改仅在当前页面内生效，刷新后恢复'),
                    ("'更新于 ' +", "'模拟数据生成于 ' +")],
-        'quota-page.js': [('官方重置预测', '社区预测（演示中停用）')],
+        'quota-page.js': [('公开重置动态', '公开重置动态（演示中停用）')],
         'quota-range.js': [('viewports.get(key)||initialView(q)',
                             'viewports.get(key)||{since:q.range.since,until:q.range.until}'),
                            ('默认显示最近 7 天', '演示默认显示全部历史')],

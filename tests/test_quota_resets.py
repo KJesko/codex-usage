@@ -267,34 +267,83 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(store.evaluate(quota(BASE,85),{'codex:primary':p},DEFAULT_ALERTS,BASE),old)
 
 
-class PublicForecastTests(unittest.TestCase):
+class PublicResetUpdatesTests(unittest.TestCase):
     def raw(self):
         iso=lambda n:datetime.fromtimestamp(n,timezone.utc).isoformat()
-        return {'meta':{'generated_at':iso(BASE)},'data':{'active_watch':{
-            'observed_at':iso(BASE-300),'expires_at':iso(BASE+900),'forecast_window':'within 24h',
-            'reset_chance_percent':40,'text':'Public hint','source':{'url':'https://x.com/thsottiaux/status/123'}}}}
+        source={'type':'x_post','url':'https://x.com/thsottiaux/status/123'}
+        return {'meta':{'generated_at':iso(BASE)},'data':{
+            'latest_reset':{'announced_at':iso(BASE-86400),'reset_type':'regular','text':'Reset done','source':source},
+            'scheduled_reset':{'status':'scheduled','announced_at':iso(BASE-300),
+                'scheduled_for':iso(BASE+900),'reset_type':'banked','text':'Tomorrow','source':source},
+            'stats':{'total':64,'avg_interval_days':6.3,'last_reset_at':iso(BASE-86400)},
+            'active_watch':{'reset_chance_percent':90}}}
 
-    def test_fresh_expired_missing_and_error_never_become_false_zero_or_live_probability(self):
+    def test_announcements_statistics_cache_and_pending_execution(self):
         with tempfile.TemporaryDirectory() as d:
-            f=ResetForecast(Path(d)/'forecast.json',lambda:self.raw())
-            f._refresh()
-            self.assertEqual(f.status(BASE)['probability'],40)
-            self.assertIsNone(f.status(BASE+901)['probability'])
+            path=Path(d)/'forecast.json'
+            f=ResetForecast(path,lambda:self.raw());f._refresh()
+            result=f.status(BASE)
+            self.assertEqual(result['state'],'scheduled')
+            self.assertEqual(result['scheduled']['scheduled_for'],BASE+900)
+            self.assertEqual(result['scheduled']['reset_type'],'banked')
+            self.assertEqual(result['latest']['reset_type'],'regular')
+            self.assertEqual(result['stats']['total'],64)
+            self.assertEqual(result['stats']['avg_interval_days'],6.3)
+            self.assertIsNone(result['probability'])
+            self.assertIsNone(result['signal'])
+            self.assertEqual(f.status(BASE+901)['state'],'awaiting_confirmation')
+            self.assertEqual(ResetForecast(path).status(BASE)['scheduled'],result['scheduled'])
             f.error='Offline'
-            self.assertIsNone(f.status(BASE)['probability'])
-            f=ResetForecast(Path(d)/'forecast.json')
-            self.assertEqual(f.status(BASE)['probability'],40)
-            f.data=normalize({'meta':self.raw()['meta'],'data':{}})
+            self.assertEqual(f.status(BASE)['state'],'unavailable')
+            self.assertEqual(f.status(BASE)['latest'],result['latest'])
+            f.error=None
+            self.assertFalse(f.status(BASE+1801)['fresh'])
+            self.assertFalse(f.status(BASE-61)['fresh'])
+
+    def test_empty_schedule_unknown_time_and_legacy_cache_have_no_probability(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=ResetForecast(Path(d)/'feed.json')
+            raw=self.raw();raw['data']['scheduled_reset']=None
+            f.data=normalize(raw)
+            self.assertEqual(f.status(BASE)['state'],'quiet')
+            raw=self.raw();raw['data']['scheduled_reset']['scheduled_for']=None
+            f.data=normalize(raw)
+            self.assertEqual(f.status(BASE)['state'],'scheduled')
+            self.assertIsNone(f.status(BASE)['scheduled']['scheduled_for'])
+            f.data=normalize({'meta':raw['meta'],'data':{'active_watch':{'reset_chance_percent':100}}})
             self.assertIsNone(f.status(BASE)['probability'])
             self.assertEqual(f.status(BASE)['state'],'quiet')
 
-    def test_untrusted_urls_malformed_values_and_out_of_range_probabilities(self):
-        for url in ('javascript:alert(1)','https://evil.example','https://x.com@evil.example'):
-            raw=self.raw();raw['data']['active_watch']['source']['url']=url
-            self.assertIsNone(normalize(raw)['signal']['source'])
-        for value in (True,-1,101,'40',float('nan')):
-            raw=self.raw();raw['data']['active_watch']['reset_chance_percent']=value
-            self.assertIsNone(normalize(raw)['signal']['probability'])
+    def test_untrusted_links_invalid_dates_and_statistics(self):
+        for url in ('javascript:alert(1)','https://evil.example','https://x.com@evil.example','https://[bad'):
+            raw=self.raw();raw['data']['latest_reset']['source']['url']=url
+            self.assertIsNone(normalize(raw)['latest']['source'])
+        for value in (True,-1,'40',float('nan'),float('inf')):
+            raw=self.raw();raw['data']['stats']={'total':value,'avg_interval_days':value}
+            self.assertIsNone(normalize(raw)['stats']['total'])
+            self.assertIsNone(normalize(raw)['stats']['avg_interval_days'])
+        raw=self.raw();raw['data']['stats']={'total':0,'avg_interval_days':0}
+        self.assertEqual(normalize(raw)['stats']['total'],0)
+        self.assertEqual(normalize(raw)['stats']['avg_interval_days'],0)
+        raw=self.raw();raw['data']['scheduled_reset']['announced_at']='2026-10-22T17:00:00'
+        self.assertIsNone(normalize(raw)['scheduled'])
+        raw=self.raw();raw['data']['scheduled_reset']['status']='cancelled'
+        self.assertIsNone(normalize(raw)['scheduled'])
+        for raw in ([],None,{}, {'meta':{'generated_at':'invalid'},'data':{}}):
+            with self.assertRaises(ValueError):normalize(raw)
+
+    def test_refresh_failure_retains_cache_and_requests_are_throttled(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            f=ResetForecast(Path(d)/'feed.json',lambda:self.raw());f._refresh()
+            old=f.data
+            f.fetcher=lambda:[]
+            f._refresh()
+            self.assertEqual(f.data,old)
+            self.assertTrue(f.error)
+            with patch('codex_usage.reset_forecast.threading.Thread') as thread:
+                f.request();f.busy=False;f.request()
+                self.assertEqual(thread.call_count,1)
 
 
 if __name__=='__main__':

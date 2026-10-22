@@ -25,6 +25,8 @@ const ActivityHeatmap = (() => {
     for(const row of report.model_timeline) {
       if(row.date<since || row.date>until)continue;
       const value=row.models.reduce((sum,cell)=>add(sum,cell),blank());
+      // Daily sessions are deduplicated across models by the report.
+      if(Number.isFinite(row.sessions))value.sessions=row.sessions;
       daily.set(row.date,value);
       add(running,value);cumulative.set(row.date,{...running});
       if(row.date>=start && row.date<=end){add(summary,value);if(value.total>0)summary.activeDays++;}
@@ -134,7 +136,9 @@ const ActivityHeatmap = (() => {
     root.querySelectorAll('[data-activity-key]').forEach(el=>{el.tabIndex=el===button?0:-1;el.classList.toggle('is-active',el===button);el.removeAttribute('aria-describedby');});
     button.setAttribute('aria-describedby','activityDetail');
     const label=mode==='week'?(cell.included?cell.from+' — '+cell.to:key+' — '+shift(key,6)):key;
-    tip.innerHTML=`<strong>${label}</strong>${cell.included?`<div class="activity-detail-total">${number(cell.value.total)} <span>${mode==='cumulative'?'累计 Token':'个 Token'}</span></div><small>API 等价 ${usd(cell.value.known_cost)}${cell.value.unpriced_tokens?' + 待定价':''}</small>`:`<p>${key>report.range.today?'尚未到来':'未纳入当前统计'}</p>`}`;
+    const details=[['输入',cell.value.input],['其中缓存读取',cell.value.cached],['输出',cell.value.output]];
+    if(mode==='day' && Number.isFinite(cell.value.sessions))details.push(['会话数',cell.value.sessions]);
+    tip.innerHTML=`<strong>${label}</strong>${cell.included?`<div class="activity-detail-total">${number(cell.value.total)} <span>${mode==='cumulative'?'累计 Token':'个 Token'}</span></div><dl class="activity-detail-breakdown">${details.map(([name,value])=>`<div><dt>${name}</dt><dd>${number(value)}</dd></div>`).join('')}<div><dt>API 等价</dt><dd>${usd(cell.value.known_cost)}${cell.value.unpriced_tokens?' + 待定价':''}</dd></div></dl>`:`<p>${key>report.range.today?'尚未到来':'未纳入当前统计'}</p>`}`;
     tip.hidden=false;
     const box=button.getBoundingClientRect(),base=root.getBoundingClientRect();
     tip.style.left=Math.max(8,Math.min(root.clientWidth-tip.offsetWidth-8,box.left-base.left+box.width/2-tip.offsetWidth/2))+'px';

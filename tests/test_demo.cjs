@@ -27,7 +27,7 @@ test('demo API bridge intercepts account and mutation requests without reaching 
   vm.runInNewContext(fs.readFileSync(require.resolve('../demo/demo-bridge.js'),'utf8'),context);
   const q=await context.window.fetch('/api/account');assert.equal((await q.json()).account.label,'演示账号 · 非真实数据');
   const blocked=await context.window.fetch('/api/remotes/sync',{method:'POST'});assert.equal(blocked.status,400);
-  const forecast=await context.window.fetch('/api/reset-forecast');assert.equal((await forecast.json()).probability,null);
+  const forecast=await context.window.fetch('/api/reset-updates');assert.equal((await forecast.json()).probability,null);
   await assert.rejects(()=>context.window.fetch('/api/data',{signal:{aborted:true}}),{name:'AbortError'});
   assert.equal(calls,0);
   listeners.click({target:{closest:()=>({id:'refresh'})},preventDefault(){},stopImmediatePropagation(){}});
