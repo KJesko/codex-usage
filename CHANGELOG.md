@@ -1,15 +1,45 @@
 # Changelog
 
-## Unreleased — web/source only
+## 1.3.0 — 2026-10-22
 
-- First-launch setup with separate source, usage and quota-connector checks; detected-folder and browser-time-zone shortcuts; one-click parent-folder correction.
-- Windows launcher falls back to `py -3`. Background tasks retain custom ports/data folders and saved source/time-zone settings, isolate tasks by data directory, and distinguish takeover from port conflicts.
-- Open pages recover their local operation token after a service restart without losing unsaved settings.
-- Guided official browser sign-in, optional masked account email and custom avatar text; no credential copying.
-- Compact folder selection with Windows/macOS/Linux examples, dark-page background fix, richer calendar details and removal of the duplicate daily table.
-- Public reset announcements replace obsolete probability forecasts, with compact responsive cards.
-- Chinese/English installation troubleshooting and copyable Agent setup prompts; updated synthetic demo.
-- Short bilingual READMEs with separate setup, Agent, user and developer guides, included in source distributions.
+Stable **web/source** release. 推荐下载 [v1.3.0 网页版 ZIP / Web ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip)。本次不更新桌面 exe，也不发布到 PyPI。No new desktop executable or PyPI publication.
+
+### 首次使用与连接 / Setup & connection
+
+- 首次启动直接进入配置引导，分别检查日志目录、实际 Token 数据与额度连接程序；支持默认目录、浏览器时区及误选 `sessions` 子目录时的修正。已有配置继续保留。
+- First-launch guidance separates log discovery, actual usage and the quota connector, with detected-folder and browser-time-zone shortcuts and parent-folder correction. Existing configurations remain intact.
+- 引导打开官方浏览器登录，复用本机 Codex 认证；可显示脱敏邮箱，头像文字自定义。无需复制 Session、Cookie 或 Token，登录会更新本机 Codex 账号。
+- Guided official browser sign-in reuses local Codex authentication. Optional masked email and custom avatar text; no credential copying. Sign-in updates the local Codex account.
+
+### 后台与界面 / Background operation & UI
+
+- Windows 启动器支持 `python` 与 `py -3`。后台任务按数据目录独立管理，保留自定义端口、数据目录、日志来源、时区和 Codex 路径配置，明确显示接管等待与端口冲突。
+- Windows launchers support `python` and `py -3`. Background tasks are isolated by data directory and retain custom ports, data folders, sources, time zones and Codex path overrides, with explicit takeover and port-conflict status.
+- 服务重启后，已打开的网页恢复操作凭据并保留未保存设置。修复深色页面底部背景，改进目录选择与路径示例；日历承载每日详情，删除重复统计表。
+- Open pages recover their local operation token after a restart without losing unsaved settings. Fixed dark-page backgrounds, improved folder selection/path examples, enriched calendar details and removed the duplicate daily table.
+- 公开重置动态改为来源提供的公告、安排时间和历史统计，移除已停用的概率预测；卡片改为紧凑的自适应布局。
+- Public reset announcements, scheduled times and historical statistics replace discontinued probability forecasts, using compact responsive cards.
+
+### 文档与发布 / Documentation & distribution
+
+- 精简中英文 README，直接链接稳定版下载；安装排错、Agent 配置提示词、使用指南及开发维护分别归档，源码包内可离线阅读。同步更新双语模拟演示。
+- Concise bilingual READMEs link directly to the stable download. Separate setup/troubleshooting, Agent-assisted setup, user and developer guides are bundled for offline reading. Updated the bilingual synthetic demo.
+- Download assets: web-source ZIP, Python wheel, source tarball and `SHA256SUMS.txt`. The ZIP is recommended for Windows startup/crash recovery support.
+
+### 升级 / Upgrade
+
+先从旧目录停用 Windows 后台守护并停止服务，备份应用数据目录（默认 `~/.codex-usage`），解压新版、重建虚拟环境并以原端口和数据目录启动，再从当前实例重新开启后台保护。保留现有配置、日志索引和额度历史；不要复制旧 `.venv`，不要同时运行两个版本写入同一数据目录。
+
+Disable the old Windows supervisor and stop the service, back up the app-data directory (default `~/.codex-usage`), extract the new version and recreate its virtual environment. Start with the original port/data options, then re-enable protection from that instance. Settings, usage indexes and quota history are retained; do not copy the old `.venv` or run two versions against the same data directory.
+
+详细步骤 / Details: [中文升级说明](docs/SETUP.md#升级与备份) · [English upgrade guide](docs/SETUP.en.md#upgrade--backup) · [发布验证 / Verification](RELEASE_CHECKLIST.md).
+
+### 已知边界 / Limits
+
+- Windows 自启要求用户已登录；macOS/Linux 暂无内置后台安装器。Windows automatic startup requires a signed-in user; macOS/Linux have no built-in service installer.
+- 额度依赖本机 Codex 登录、网络和上游接口；采集中断的记录无法补造。Quota depends on local Codex authentication, connectivity and upstream availability; missing observations cannot be reconstructed.
+- 公开公告不代表个人账号已重置，默认重置归因并非官方确认。Public announcements do not confirm a reset for an individual account; inferred reset causes are not official confirmation.
+- API 等价费用继续按最新价格计算，仅供参考。API-equivalent historical costs continue to use current prices and are reference estimates.
 
 ## 1.2.0 — 2026-10-21
 

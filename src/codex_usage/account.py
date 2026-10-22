@@ -17,6 +17,7 @@ import hashlib
 import sqlite3
 import secrets
 
+from . import __version__
 from .quota_history import QuotaHistory
 from .quota_alerts import QuotaAlerts, DEFAULT_ALERTS
 
@@ -188,7 +189,7 @@ def normalize_quota(limits):
 
 
 def initialize(rpc):
-    rpc.call('initialize', {'clientInfo': {'name': 'codex_usage', 'title': 'Codex Usage', 'version': '1.2.0'}})
+    rpc.call('initialize', {'clientInfo': {'name': 'codex_usage', 'title': 'Codex Usage', 'version': __version__}})
     rpc.send({'method': 'initialized', 'params': {}})
 
 

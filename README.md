@@ -15,10 +15,10 @@
 
 | 版本 | 下载 | 适合谁 |
 | --- | --- | --- |
-| 稳定版 v1.2.0 | [Release](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0)，选择 `codex-usage-1.2.0-web-source.zip` | 优先使用已发布版本 |
-| 当前源码 `main` | [下载 ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip) | 使用最新改进；尚未打包为稳定版 |
+| **稳定网页版 v1.3.0（推荐）** | **[下载 ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip)** · [更新说明与校验文件](https://github.com/KJesko/codex-usage/releases/tag/v1.3.0) | 新安装或升级 |
+| 开发源码 `main` | [下载 ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip) | 参与开发或提前体验后续改动 |
 
-下方文档对应当前源码。首次启动引导、浏览器登录、目录选择和自定义端口/数据目录后台任务等新功能尚未包含在 v1.2.0 中；旧版本以包内文档为准。已有安装请先看[升级说明](docs/SETUP.md#升级与备份)。
+v1.3.0 已包含首次启动引导、浏览器登录、目录选择和自定义端口/数据目录后台支持。本次只发布网页版；已有安装请先看[升级与备份](docs/SETUP.md#升级与备份)。
 
 ## 启动
 

@@ -4,7 +4,7 @@
 
 [Environment](#environment--installation) · [Logs](#connect-local-logs) · [Account](#account-connection) · [Options](#configuration--startup-options) · [SSH](#ssh-aggregation) · [Background operation](#windows-background-operation) · [Upgrades](#upgrade--backup) · [Troubleshooting](#troubleshooting)
 
-These instructions describe current `main`. First-launch checks, browser sign-in, folder selection and custom-instance background tasks are not in v1.2.0; use that archive's bundled instructions. For the shortest startup steps, see the [README](../README.en.md#start); for a copyable prompt, see [Agent-assisted setup](AGENT_SETUP.en.md).
+These instructions cover the v1.3.0 stable web release. For the shortest startup steps, see the [README](../README.en.md#start); for a copyable prompt, see [Agent-assisted setup](AGENT_SETUP.en.md). Follow the bundled instructions when using an older release.
 
 ## Environment & installation
 
@@ -14,18 +14,18 @@ Run under the computer and OS user where you use Codex. Windows, WSL, containers
 - No Node.js, database server or desktop dependencies are needed for normal web use. Node.js is for development tests.
 - Token reporting needs readable Codex logs. You can start without logs, but the app will not invent usage.
 - Quota requires installed, authenticated local Codex and network access. A quota failure does not block log reporting.
-- Choose `web-source.zip` from the [stable release](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0), or the [current source ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip) for newer improvements. ZIP downloads do not require Git.
+- Recommended: [download the v1.3.0 web ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip). The [release page](https://github.com/KJesko/codex-usage/releases/tag/v1.3.0) includes release notes, a wheel and checksums. ZIP downloads do not require Git.
 
 If Codex is missing, see the [official installation guide](https://learn.chatgpt.com/docs/codex/cli) and [authentication guide](https://learn.chatgpt.com/docs/auth).
 
 ### Get the source with Git
 
 ```sh
-git clone https://github.com/KJesko/codex-usage.git
+git clone --branch v1.3.0 --depth 1 https://github.com/KJesko/codex-usage.git
 cd codex-usage
 ```
 
-Run from the extracted folder containing `codex_usage.py`, `requirements.txt` and `src/`, not from your `.codex` log directory.
+This selects the stable release. Omit `--branch v1.3.0 --depth 1` to work on development `main`. Run from the extracted folder containing `codex_usage.py`, `requirements.txt` and `src/`, not from your `.codex` log directory.
 
 ### Windows
 
@@ -57,7 +57,7 @@ codex-usage
 Alternatively, install a wheel downloaded from the release:
 
 ```sh
-python -m pip install ./codex_usage_local-1.2.0-py3-none-any.whl
+python -m pip install ./codex_usage_local-1.3.0-py3-none-any.whl
 codex-usage --no-browser
 ```
 
@@ -165,14 +165,14 @@ Closing the page does not stop collection. A foreground server can be stopped wi
 
 ## Upgrade & backup
 
-1. Disable Windows automatic protection, if enabled, using `scripts/enable-web-background.ps1 -Disable`, and wait for the service to exit. Stop a manually launched server with Ctrl+C.
+1. Disable Windows automatic protection, if enabled, using `scripts/enable-web-background.ps1 -Disable` from the old installation, and wait for the service to exit. Stop a manually launched server with Ctrl+C.
 2. With the service stopped, back up the entire `~/.codex-usage` directory.
-3. Replace the source with the new release, or extract to a new permanent folder. Recreate the virtual environment rather than copying `.venv`; install requirements and launch again.
-4. If you moved the source directory, run `run.ps1` there first, then `scripts/enable-web-background.ps1` to register its new location.
+3. Extract v1.3.0 to a permanent folder. Recreate the virtual environment rather than copying `.venv`; install requirements and launch with your original options.
+4. After starting the new version, re-enable protection from that running instance's settings page. Confirm `python codex_usage.py --version` reports `1.3.0`, then check usage, quota history and a recent successful sync.
 
 For a custom app-data directory, pass its `-DataDir` when disabling and back up that directory instead. Re-enable with both the original `-DataDir` and `-Port`, or turn protection on from the web instance started with those options. Default commands control the default instance.
 
-Do not delete the user-data directory. Version 1.2.0 retains existing settings, usage indexes and quota history. Browser theme and hidden-project preferences remain intact. To roll back, stop the service and restore the previous source and pre-upgrade data backup. Never run two versions against the same data directory simultaneously.
+Do not delete the user-data directory. Version 1.3.0 retains existing settings, usage indexes and quota history. Browser theme and hidden-project preferences remain intact when using the same address. To roll back, stop the service and restore the previous source and pre-upgrade data backup. Never run two versions against the same data directory simultaneously.
 
 Verify downloads against `SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256`, `sha256sum`, or `shasum -a 256`. Checksums detect transfer errors; they are not code signatures.
 
@@ -181,7 +181,7 @@ Verify downloads against `SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256`,
 | Symptom | Next step |
 | --- | --- |
 | Unsure where commands go | Open PowerShell/Terminal in the extracted folder containing `codex_usage.py`; quote paths containing spaces. A ZIP download does not require Git |
-| Windows `python` is missing or opens the Store | Check `python --version`. If only `py` works, run `py -3 -m venv .venv`, verify `.\.venv\Scripts\python.exe --version` is 3.10+, then use `run.bat`; otherwise install a supported Python |
+| Windows `python` is missing or opens the Store | The launcher checks both `python` and `py -3` and requires Python 3.10+. If neither works, install a supported Python and reopen the terminal. Recreate an incompatible old `.venv` with a supported version |
 | Linux cannot create venv or find pip | Install your distribution's matching Python venv/pip components. Do not install project dependencies into system Python using sudo |
 | Dependency download times out or reports certificate errors | Check connectivity/proxy/certificates for the terminal running pip; do not disable verification. Offline installation needs prepared dependencies |
 | Page cannot open or port is busy | Keep the startup terminal running and use the printed URL. Default: `http://127.0.0.1:8787`; use `--port 8790` if needed, without killing an unknown process |
