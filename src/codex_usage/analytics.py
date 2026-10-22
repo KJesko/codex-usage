@@ -156,7 +156,9 @@ def report(snapshot, query, config, now=None):
         "timeline": [{"date": k, **finish(v)} for k, v in sorted(timeline.items())],
         # Always daily, regardless of the overview's day/week/month grouping.
         # Keep model cells sparse; absent cells mean zero usage for that day.
-        "model_timeline": [{"date": day, "models": [
+        "model_timeline": [{"date": day,
+            "sessions": len(set().union(*(bucket["_sessions"] for bucket in values.values()))),
+            "models": [
             {"name": name, **finish(bucket)} for name, bucket in sorted(values.items())]}
             for day, values in sorted(daily_models.items())],
         "projects": sort(projects.values()), "sessions": sort(sessions.values()), "models": sort(models.values()),

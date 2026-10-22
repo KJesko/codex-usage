@@ -22,7 +22,8 @@
         case '/api/account/acknowledge':result=demo.acknowledge(query.id);break;
         case '/api/remotes':result=demo.remotes();break;
         case '/api/web-background':result={supported:false,enabled:false};break;
-        case '/api/reset-forecast':result={fresh:false,probability:null,signal:null,problem:'演示站不请求社区预测，也不展示虚构的实时预测概率。'};break;
+        case '/api/reset-updates':
+        case '/api/reset-forecast':result={fresh:false,probability:null,signal:null,problem:'演示站不请求公开重置动态，也不展示虚构的实时公告。'};break;
         default:throw new Error('演示模式不执行本机服务或远程连接操作。');
       }
       return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json'}});
@@ -50,7 +51,7 @@
   document.addEventListener('submit',e=>{if(e.target.id==='remoteForm'){e.preventDefault();e.stopImmediatePropagation();notify('演示站不会连接 SSH 或读取真实数据。');}},true);
   // Label and disable local-only controls whenever the shared UI renders a view.
   const decorate=()=>{
-    document.querySelectorAll('#remoteForm input,#remoteForm button,#sourcePaths,#syncRemotes,[data-toggle-remote],[data-remove-remote],#desktopNotifications').forEach(el=>{
+    document.querySelectorAll('#remoteForm input,#remoteForm button,#sourcePaths,[data-pick-source],[data-default-source],[data-check-sources],[data-browser-login],[data-refresh-quota],#syncRemotes,[data-toggle-remote],[data-remove-remote],#desktopNotifications').forEach(el=>{
       el.disabled=true;el.title='仅安装到本机后可用；演示站使用模拟数据';
     });
     const status=document.getElementById('accountStatus');if(status&&status.textContent!=='模拟账号 · 未连接真实服务')status.textContent='模拟账号 · 未连接真实服务';

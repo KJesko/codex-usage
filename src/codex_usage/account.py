@@ -51,6 +51,7 @@ class AccountRPC:
         self.timeout = timeout
         self.sequence = 0
         self.messages = queue.Queue()
+        self.notifications = queue.Queue()
         self.process = subprocess.Popen(
             [executable or find_codex(), 'app-server', '--listen', 'stdio://'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -68,6 +69,8 @@ class AccountRPC:
                     continue
                 if isinstance(message, dict) and 'id' in message:
                     self.messages.put(message)
+                elif isinstance(message, dict) and message.get('method') == 'account/login/completed':
+                    self.notifications.put(message)
         finally:
             self.messages.put(None)
 
@@ -96,7 +99,7 @@ class AccountRPC:
                 error = row['error'] if isinstance(row['error'], dict) else {}
                 message = str(error.get('message', '')).lower()
                 # Never pass raw RPC errors to the browser: they may contain URLs
-                # or credential details. No login/reset/purchase RPC is invoked.
+                # or credential details. Quota polling never invokes login/reset/purchase RPCs.
                 if 'workspace routing discovery timed out' in message:
                     raise AccountError('routing_timeout', 'Codex 工作区路由发现超时，看板会自动重试。', method)
                 if any(s in message for s in ('401', 'unauthorized', 'not logged', 'authentication', 'sign in', 'refresh token')):

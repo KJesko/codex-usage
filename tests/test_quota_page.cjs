@@ -9,17 +9,19 @@ function load(file){
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/codex_usage/static/'+file),'utf8'),context);
   return context.module.exports;
 }
-test('forecast distinguishes true zero, missing, expired and failed data and escapes source text',()=>{
+test('public updates show schedules, types and statistics without legacy probabilities',()=>{
   const page=load('quota-page.js');
-  const base={fresh:true,probability:0,generated_at:now,signal:{expires_at:now+100,at:now-50,horizon:'within 24h',text:'<script>bad</script>',source:'https://x.com/a'}};
-  const html=page.forecastMarkup(base);
-  assert.match(html,/<strong>0%<\/strong>/);
-  assert.match(html,/&lt;script>/);
-  assert.match(html,/尚未校准/);
-  for(const value of [{...base,probability:null},{...base,fresh:false},{...base,signal:{...base.signal,expires_at:now-5}}]){
-    assert.match(page.forecastMarkup(value),/<strong>—<\/strong>/);
-  }
+  const f={fresh:true,generated_at:now,probability:90,signal:{horizon:'within 24h'},
+    scheduled:{at:now-100,scheduled_for:now+3600,reset_type:'banked',text:'<script>bad</script>',source:'https://x.com/a'},
+    latest:{at:now-86400,reset_type:'regular',text:'Done',source:'https://x.com/b'},stats:{total:64,avg_interval_days:6.3}};
+  const html=page.forecastMarkup(f);
+  assert.match(html,/已安排重置/);assert.match(html,/发放重置卡/);assert.match(html,/常规重置/);
+  assert.match(html,/64 次/);assert.match(html,/6.3 天/);assert.match(html,/1 天/);
+  assert.match(html,/&lt;script>/);assert.doesNotMatch(html,/<script>|90%|预测窗口|尚未校准/);
+  assert.match(html,/查看完整历史/);assert.match(html,/Codex Resets/);
+  assert.doesNotMatch(page.forecastMarkup({...f,latest:{...f.latest,source:'javascript:alert(1)'}}),/javascript:/);
 });
+
 test('event cards keep observed interval and explicit inferred attribution',()=>{
   const page=load('quota-page.js');
   const event={id:'1',kind:'credit',label:'每周额度',since:now-120,at:now-60,confirmed_at:now,before_used:80,after_used:2,old_reset:now+1000,new_reset:now+1000,before_count:3,after_count:2};
@@ -33,18 +35,22 @@ test('event cards keep observed interval and explicit inferred attribution',()=>
   assert.equal(page.eventTitle({...event,kind:'scheduled',label:'5 小时额度'}),'正常周期重置');
 });
 
-test('forecast explains a healthy empty feed separately from expiration and connection failure',()=>{
-  const page=load('quota-page.js'),quiet={fresh:true,probability:null,signal:null,generated_at:now};
+test('public updates distinguish no schedule, overdue announcement, stale cache and errors',()=>{
+  const page=load('quota-page.js'),quiet={fresh:true,generated_at:now,stats:{total:0,avg_interval_days:0}};
+  assert.match(page.forecastMarkup(null),/正在读取公开重置动态/);
   for(const busy of [true,false]){
     const html=page.forecastMarkup({...quiet,busy});
-    assert.match(html,/来源正常 · 暂无预测/);
-    assert.doesNotMatch(html,/<strong>0%<\/strong>|暂时无法连接/);
+    assert.match(html,/来源已同步/);assert.match(html,/暂无已安排重置/);assert.match(html,/0 次/);
+    assert.doesNotMatch(html,/暂时失败|0%|预测窗口/);
   }
-  assert.match(page.forecastMarkup({...quiet,signal:{expires_at:now-1}}),/上次预测已过期/);
-  assert.match(page.forecastMarkup({...quiet,signal:{expires_at:now+100}}),/暂无有效概率/);
-  assert.match(page.forecastMarkup({...quiet,fresh:false}),/来源数据已过期/);
-  assert.match(page.forecastMarkup({...quiet,fresh:false,problem:'Offline'}),/预测来源暂时无法连接/);
-  assert.match(page.forecastMarkup({...quiet,fresh:false,busy:true}),/正在更新预测来源/);
+  const scheduled={at:now-50,scheduled_for:now-1};
+  assert.match(page.forecastMarkup({...quiet,scheduled}),/等待后续确认/);
+  assert.match(page.forecastMarkup({...quiet,scheduled:{at:now-50,scheduled_for:null}}),/公告未提供执行时间/);
+  const stale=page.forecastMarkup({...quiet,fresh:false,scheduled:{...scheduled,scheduled_for:now+900}});
+  assert.match(stale,/来源数据已过期/);assert.match(stale,/上次获取的重置安排/);
+  assert.doesNotMatch(stale,/距公告时间约/);
+  assert.match(page.forecastMarkup({...quiet,fresh:false,problem:'Offline'}),/同步暂时失败/);
+  assert.match(page.forecastMarkup({...quiet,fresh:false,busy:true}),/正在同步来源/);
 });
 
 test('reset board excludes legacy deadline drift and card-count-only observations',()=>{

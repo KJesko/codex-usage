@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — web/source only
+
+- First-launch setup with separate source, usage and quota-connector checks; detected-folder and browser-time-zone shortcuts; one-click parent-folder correction.
+- Windows launcher falls back to `py -3`. Background tasks retain custom ports/data folders and saved source/time-zone settings, isolate tasks by data directory, and distinguish takeover from port conflicts.
+- Open pages recover their local operation token after a service restart without losing unsaved settings.
+- Guided official browser sign-in, optional masked account email and custom avatar text; no credential copying.
+- Compact folder selection with Windows/macOS/Linux examples, dark-page background fix, richer calendar details and removal of the duplicate daily table.
+- Public reset announcements replace obsolete probability forecasts, with compact responsive cards.
+- Chinese/English installation troubleshooting and copyable Agent setup prompts; updated synthetic demo.
+
 ## 1.2.0 — 2026-10-21
 
 Stable **web/source** release. No new desktop executable and no PyPI publication.

@@ -80,8 +80,25 @@ function syncURL(push=false) {
 }
 function notify(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3000); }
 function failure(message) { $('error').textContent = message; $('error').hidden = false; }
-async function api(url, options) {
+async function sessionFetch(url, options) {
   const response = await fetch(url, options);
+  const token=options?.headers?.['X-CSRF-Token'];
+  if(response.status===403 && token && options.method==='POST') {
+    // A restarted local service has a new token. Retry only rejected requests,
+    // once, without replacing settings or discarding an unsaved form.
+    const fresh=await fetch('/api/settings');
+    if(fresh.ok) {
+      const current=await fresh.json();
+      if(current.csrf && current.csrf!==token) {
+        settings.csrf=current.csrf;
+        return fetch(url,{...options,headers:{...options.headers,'X-CSRF-Token':current.csrf}});
+      }
+    }
+  }
+  return response;
+}
+async function api(url, options) {
+  const response = await sessionFetch(url, options);
   const result = await response.json();
   if (!response.ok || result.error) throw new Error(result.error || '请求失败');
   return result;
@@ -97,7 +114,7 @@ function updateControls() {
   document.querySelectorAll('[data-overview-tab]').forEach(b=>{const active=state.view==='overview' && b.dataset.overviewTab===state.tab;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');});
   $('export').hidden = ['settings','pricing','quota'].includes(state.view);
   $('export').title = state.view==='sessions'?'导出当前搜索和筛选匹配的全部会话，包含所有分页':'导出当前筛选范围的统计结果';
-  $('accountAvatar').textContent = settings?.avatar_initials || 'CU';
+  paintIdentity();
   $('filterButton').hidden=state.view==='quota';
   $('alertsButton').hidden=state.view!=='quota';
   $('quotaAlertBanner').hidden=state.view!=='quota';
@@ -189,7 +206,7 @@ function chart(rows, metricName, W, H) {
   const ticks = Array.from({length:5}, (_,i) => metricName==='cost' ? usd(max*i/4) : compact(max*i/4));
   const L=Math.max(70, ...ticks.map(label=>label.length*8.4+14)),R=28,T=18,B=38,w=Math.max(1,W-L-R),h=H-T-B;
   const step = w / rows.length, bar = Math.max(.6, Math.min(28, step * .64));
-  let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${metricName==='cost'?'API 等价成本':'Token'}趋势；详细数值可在下方统计表查看">`;
+  let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${metricName==='cost'?'API 等价成本':'用量趋势'}">`;
   for (let i=0;i<=4;i++) {
     const y=T+h-(i/4)*h;
     svg += `<line class="grid" x1="${L}" y1="${y}" x2="${W-R}" y2="${y}"/><text x="${L-12}" y="${y+5}" text-anchor="end">${esc(ticks[i])}</text>`;
@@ -241,7 +258,7 @@ function trendPanel(rows) {
   const legend = [['uncached','未缓存输入'],['cached','缓存读取'],['write','缓存写入'],['output','输出']];
   return `<section class="panel usage-trend" aria-labelledby="usageTrendTitle"><div class="panel-head"><div><h2 id="usageTrendTitle">用量趋势</h2><p>${data.range.since} — ${data.range.until}${state.grain==='week'?' · 每周一开始':''}</p></div>${grainSwitch()}</div>
     <div class="trend-visuals"><div class="trend-plot"><div class="panel-head"><div class="metric-switch" role="group" aria-label="趋势指标"><button data-metric="tokens" class="${state.metric==='tokens'?'selected':''}">Tokens</button><button data-metric="cost" class="${state.metric==='cost'?'selected':''}">API 等价 USD</button></div><span class="subtle">${state.grain==='day'?'每日':state.grain==='week'?'每周':'每月'}汇总</span></div><div class="chart-wrap"><div class="chart-host" id="trendChart"></div></div><div class="chart-legend">${state.metric==='tokens' ? legend.map(([key,label])=>`<span class="legend-item"><i style="background:${colors[key]}"></i>${label}</span>`).join('') : '<span data-help>仅绘制已定价部分；未知价格不视为零成本</span>'}</div></div>${composition(data.summary)}</div>
-    ${timelineTable(rows,state.grain,data.timezone,true)}</section>`;
+    </section>`;
 }
 function composition(s) {
   return `<section class="panel"><div class="panel-head"><h2>Token 构成</h2><span class="badge neutral">所选范围</span></div><div class="composition"><div class="composition-total"><b>${compact(s.total)}</b><span>tokens</span></div><div class="stack">${Object.entries(colors).map(([key,color])=>`<span style="width:${s.total?s[key]/s.total*100:0}%;background:${color}"></span>`).join('')}</div>${[['uncached','未缓存输入'],['cached','缓存读取'],['write','缓存写入'],['output','输出']].map(([key,label])=>`<div class="composition-row"><span class="label"><i class="dot" style="background:${colors[key]}"></i>${label}</span><span class="amount" title="${number(s[key])}">${compact(s[key])}<span class="percent">${percent(s.total?s[key]/s.total:0)}</span></span></div>`).join('')}<p class="inset-note">输出已包含 ${compact(s.reasoning)} 推理 tokens。缓存读取、缓存写入都是输入的组成部分。</p></div></section>`;
@@ -299,8 +316,9 @@ function paintBackground(){
   const enabled=s.enabled===true,unknown=s.enabled==null;
   const error=backgroundError||s.error;
   const collector=s.collector||{};
+  const phases={managed:'已接管后台服务',waiting_server:'等待当前前台服务退出后接管',port_conflict:'端口被其他服务占用，无法启动'};
   const opened=host.querySelector('details')?.open;
-  const markup=`<div class="background-controls"><div><strong>开机自启与异常恢复</strong><div>${unknown?'状态未知':enabled?'已开启':'已关闭'}</div></div><button class="button" id="toggleBackground" role="switch" aria-label="开机自启与异常恢复" aria-checked="${enabled}" ${backgroundBusy||unknown?'disabled':''}>${backgroundBusy?'正在设置…':enabled?'关闭自动保护':'开启自动保护'}</button></div><dl class="definition"><dt>网页服务</dt><dd>${backgroundError?'连接待确认':'运行中'}</dd><dt>额度采集</dt><dd>${collector.running?'运行中 · 每 '+collector.interval_seconds+' 秒':'未运行'}${collector.failures?' · 连续失败 '+collector.failures+' 次':''}</dd><dt>最近成功采集</dt><dd>${collector.last_success?esc(new Date(collector.last_success).toLocaleString('zh-CN',{timeZone:settings.timezone,hour12:false})):'暂无记录'}</dd><dt>开机自动启动</dt><dd>${unknown?'状态未知':enabled?'已开启 · 登录后启动':'已关闭'}</dd><dt>异常退出恢复</dt><dd>${s.supervisor_running?'运行中':enabled?'尚未就绪 · 等待自动恢复':'未运行'}</dd><dt>最近启动</dt><dd>${esc(format(s.last_started))}</dd><dt>最近一次重启</dt><dd>${esc(format(s.last_restart))}</dd></dl>${error?'<p role="alert">'+esc(error)+'</p>':''}<p>关闭自动保护不会停止当前网页和采集；服务退出后将不会自动恢复。</p><details><summary>启动与恢复说明</summary><p>登录当前 Windows 账号后静默启动。网页进程退出后通常约 5 秒恢复，连续失败最长等待 60 秒；守护进程退出后约 1 分钟恢复。关机、休眠或尚未登录时无法采集。时间按设置时区显示；重启时间从启用状态记录后开始保存。</p></details>`;
+  const markup=`<div class="background-controls"><div><strong>开机自启与异常恢复</strong><div>${unknown?'状态未知':enabled?'已开启':'已关闭'}</div></div><button class="button" id="toggleBackground" role="switch" aria-label="开机自启与异常恢复" aria-checked="${enabled}" ${backgroundBusy||unknown?'disabled':''}>${backgroundBusy?'正在设置…':enabled?'关闭自动保护':'开启自动保护'}</button></div><dl class="definition"><dt>访问地址</dt><dd><code>http://127.0.0.1:${esc(s.port||8787)}</code></dd><dt>应用数据目录</dt><dd><code>${esc(s.data_dir||'—')}</code></dd><dt>网页服务</dt><dd>${backgroundError?'连接待确认':'运行中'}</dd><dt>额度采集</dt><dd>${collector.running?'运行中 · 每 '+collector.interval_seconds+' 秒':'未运行'}${collector.failures?' · 连续失败 '+collector.failures+' 次':''}</dd><dt>最近成功采集</dt><dd>${collector.last_success?esc(new Date(collector.last_success).toLocaleString('zh-CN',{timeZone:settings.timezone,hour12:false})):'暂无记录'}</dd><dt>开机自动启动</dt><dd>${unknown?'状态未知':enabled?'已开启 · 登录后启动':'已关闭'}</dd><dt>异常退出恢复</dt><dd>${s.supervisor_running?(phases[s.phase]||'运行中'):enabled?'尚未就绪 · 等待自动恢复':'未运行'}</dd><dt>最近启动</dt><dd>${esc(format(s.last_started))}</dd><dt>最近一次重启</dt><dd>${esc(format(s.last_restart))}</dd></dl>${enabled && s.configuration_matches===false?'<p role="alert">后台配置与当前端口不一致，请关闭后重新开启自动保护。</p>':''}${error?'<p role="alert">'+esc(error)+'</p>':''}<p>关闭自动保护不会停止当前网页和采集；服务退出后将不会自动恢复。</p><details><summary>启动与恢复说明</summary><p>开启时保存当前端口、应用数据目录、日志来源和统计时区；不同数据目录使用独立后台任务。登录当前 Windows 账号后静默启动。网页进程退出后通常约 5 秒恢复，连续失败最长等待 60 秒；守护进程退出后约 1 分钟恢复。关机、休眠或尚未登录时无法采集。时间按设置时区显示；重启时间从启用状态记录后开始保存。</p></details>`;
   QuotaDOM.patch(host,markup);if(opened)host.querySelector('details').open=true;
   $('refreshBackground').disabled=backgroundBusy||backgroundReading;
 }
@@ -311,10 +329,96 @@ async function readBackground(){
   catch(e){backgroundError='无法读取后台状态，请稍后刷新。';}
   finally{backgroundReading=false;paintBackground();}
 }
+document.addEventListener('input',event=>{if(event.target.id==='sourcePaths' && $('sourceCheckResult'))$('sourceCheckResult').textContent='';});
+function setupPanel() {
+  const setup=settings.setup;
+  const sourceReady=setup?.sources?.some(row=>row.status==='ready');
+  const checkup=setup?`<div class="settings-body setup-checkup"><strong>${setup.first_run?'首次配置：先确认日志，再选择是否连接额度':'当前配置检查'}</strong><div class="setup-checks"><span>${sourceReady?'日志目录已识别':'日志目录待检查'}</span><span>${data?.summary?.events?'当前筛选中已读到用量':'当前筛选中没有用量事件'}</span><span>${setup.cli_available?'已找到额度连接程序':'未找到额度连接程序'}</span></div><div>${sourceReady?'目录识别通过；实际 Token 以项目和会话页面为准。':'请在下方选择 Codex 主目录，检查后保存。没有日志时也可先保存配置。'}</div><details><summary>运行位置与配置</summary><dl class="definition"><dt>运行环境</dt><dd>${esc(setup.system)}</dd><dt>访问地址</dt><dd>${esc(setup.url)}</dd><dt>应用数据目录</dt><dd><code>${esc(setup.data_dir)}</code></dd></dl><div>日志、登录和网络均来自运行后台的系统用户。远程环境与当前浏览器所在电脑可能不同。</div></details></div>`:'';
+  return `<section class="panel setup-panel"><div class="panel-head"><h2>开始使用</h2></div>${checkup}<div class="settings-body setup-grid"><div><h3>项目与会话 Token</h3><div>读取本机日志，无需连接账号。请在下方检查 Codex 数据目录。</div><button class="button" data-setup-source>检查日志目录</button></div><div><h3>账号额度</h3><div id="setupAccountStatus" role="status"></div><div class="setup-actions"><button class="button" data-browser-login>浏览器登录</button><button class="button" data-refresh-quota>重新连接额度</button></div><div id="browserLoginStatus" role="status"></div><details><summary>连接步骤与常见问题</summary><ol><li>在运行看板的同一系统用户下，打开 Codex 并登录 ChatGPT 账号。</li><li>终端运行 <code>codex login status</code> 检查登录；未登录时运行 <code>codex login</code>，完成浏览器登录。</li><li>回到这里重新连接。浏览器登录 ChatGPT 不等于本机 Codex 已登录。</li></ol><div>未找到程序时，将 CODEX_USAGE_CLI 设为原生 Codex 程序的绝对路径并重启后台；Windows 使用 codex.exe，不使用 cmd 或 bat 包装脚本。</div><div>额度连接使用后台进程的账号环境；更改日志目录不会切换账号。无需向看板填写密码或 API Key。</div></details></div><div><h3>其他机器的用量</h3><div>在下方远程服务器中添加已有的 SSH 别名。先确认免密登录和远程 Python 可用。</div><div>SSH 只汇总日志，不连接远程账号额度。</div><button class="button" data-setup-remote>管理服务器</button></div></div></section>`;
+}
+async function beginBrowserLogin(cancel=false) {
+  const host=$('browserLoginStatus');
+  if(host)host.textContent='正在准备登录…';
+  try {
+    const result=await api(cancel?'/api/account/login/cancel':'/api/account/login',{method:'POST',headers:{'X-CSRF-Token':settings.csrf}});
+    accountData={...(accountData||{}),browser_login:result};paintSetupAccount();refreshAccount();
+  } catch(error){if(host)host.textContent=error.message;}
+}
+function paintBrowserLogin() {
+  const host=$('browserLoginStatus');if(!host)return;
+  const login=accountData?.browser_login||{status:'idle'};
+  const labels={starting:'正在准备官方登录链接…',waiting:'在浏览器完成官方登录后，额度会自动刷新。',success:'登录已完成，正在按新登录状态读取额度。',failed:'未能完成登录。请检查 Codex 安装、网络或本机登录回调端口，然后重试；原有连接方式仍可使用。',expired:'登录等待已超时，请重新发起。',cancelled:'已取消本次登录。'};
+  const active=['starting','waiting'].includes(login.status);
+  const button=document.querySelector('[data-browser-login]');if(button)button.disabled=active;
+  const signature=JSON.stringify(login);if(host.dataset.state===signature)return;host.dataset.state=signature;
+  host.replaceChildren();
+  const message=document.createElement('div');message.textContent=labels[login.status]||'通过官方页面登录，无需复制 Session；这会更新本机 Codex 的登录账号。';host.append(message);
+  if(login.status==='waiting' && login.url){
+    const url=new URL(login.url);
+    if(url.protocol==='https:' && url.hostname==='auth.openai.com' && !url.username && !url.password){
+      const link=document.createElement('a');link.className='button';link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='打开官方登录页';host.append(link);
+    }
+  }
+  if(active){const cancel=document.createElement('button');cancel.className='text-button';cancel.type='button';cancel.textContent='取消登录';cancel.addEventListener('click',()=>beginBrowserLogin(true));host.append(cancel);}
+}
+function paintSetupAccount() {
+  const host=$('setupAccountStatus');if(!host)return;
+  paintBrowserLogin();
+  paintIdentity();
+  const q=accountData, kind=q?.problem?.kind;
+  const guidance={signed_out:'登录已失效，请在本机 Codex 重新登录后重试。',unavailable:'未能读取额度，请展开连接步骤检查 Codex 程序与版本。',unsupported:'请更新 Codex 后重启后台，再重新连接。',timeout:'额度请求超时，请检查后台进程使用的网络或代理后重试。',routing_timeout:'账号服务暂时不可达，看板会自动重试。',offline:'账号服务暂时不可达，看板会自动重试。',connection_lost:'连接已中断，请重新连接额度。'};
+  host.textContent=q?.busy?'正在连接额度…':q?.problem?guidance[kind]||q.problem.message:q?.transportError?q.transportError:q?.fetched_at?(q.stale?'等待更新；上次成功：':'额度已连接；上次成功：')+accountTime(q.fetched_at):'等待首次额度读取，可点击重新连接。';
+}
+function paintIdentity() {
+  const profile=accountData?.profile;
+  $('sidebarAccount').textContent=profile?.label || accountData?.account?.label || 'Codex 账号';
+  $('accountAvatar').textContent=settings?.avatar_initials || 'CU';
+}
+let sourceBrowseId=0;
+async function openSourcePicker() {
+  let dialog=$('sourcePicker');
+  if(!dialog){
+    dialog=document.createElement('dialog');dialog.id='sourcePicker';dialog.className='source-picker';
+    dialog.setAttribute('aria-labelledby','sourcePickerTitle');
+    dialog.innerHTML=`<div class="panel-head"><h2 id="sourcePickerTitle">选择数据目录</h2><button type="button" class="icon-button" data-source-close aria-label="关闭">×</button></div><form id="sourceBrowseForm" class="source-browse-path"><label for="sourceBrowsePath">当前目录</label><input id="sourceBrowsePath" spellcheck="false"><button class="button" type="submit">打开</button></form><div id="sourceBrowseShortcuts" class="setup-actions"></div><div id="sourceBrowseStatus" role="status"></div><div id="sourceBrowseFolders" class="source-folder-list"></div><div class="source-picker-actions"><button type="button" class="button" data-source-close>取消</button><button type="button" class="button primary" id="sourceBrowseSelect">选择此目录</button></div>`;
+    document.body.append(dialog);
+    dialog.addEventListener('close',()=>{sourceBrowseId++;});
+    dialog.querySelector('form').addEventListener('submit',event=>{event.preventDefault();browseSource($('sourceBrowsePath').value.trim());});
+    dialog.addEventListener('click',event=>{
+      const button=event.target.closest('button');if(!button)return;
+      if(button.hasAttribute('data-source-close'))dialog.close();
+      if(button.dataset.sourceDirectory!==undefined)browseSource(button.dataset.sourceDirectory);
+      if(button.id==='sourceBrowseSelect'){
+        const input=$('sourcePaths');if(!input)return;
+        const paths=input.value.split('\n').map(p=>p.trim()).filter(Boolean);
+        if(!paths.includes(dialog.dataset.path))paths.push(dialog.dataset.path);
+        if(paths.length>20){$('sourceBrowseStatus').textContent='最多添加 20 个目录';return;}
+        input.value=paths.join('\n');input.dispatchEvent(new Event('input',{bubbles:true}));dialog.close();input.focus();
+      }
+    });
+  }
+  dialog.showModal();
+  await browseSource(null);
+}
+async function browseSource(path) {
+  const request=++sourceBrowseId,dialog=$('sourcePicker');
+  $('sourceBrowseSelect').disabled=true;$('sourceBrowseFolders').replaceChildren();
+  $('sourceBrowseStatus').textContent='正在读取目录…';
+  try{
+    const result=await api('/api/setup/browse',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':settings.csrf},body:JSON.stringify({path})});
+    if(request!==sourceBrowseId || !dialog.open)return;
+    dialog.dataset.path=result.path;$('sourceBrowsePath').value=result.path;
+    const button=(label,path)=>`<button type="button" class="button" data-source-directory="${esc(path)}">${esc(label)}</button>`;
+    $('sourceBrowseShortcuts').innerHTML=(result.parent?button('上一级',result.parent):'')+button('用户目录',result.home)+result.roots.map(path=>button(path,path)).join('');
+    $('sourceBrowseFolders').innerHTML=result.folders.map(row=>button('▸ '+row.name,row.path)).join('');
+    $('sourceBrowseStatus').textContent=result.truncated?'目录较多，仅显示部分；可输入完整路径打开':result.folders.length?'':'此目录没有子文件夹';
+    $('sourceBrowseSelect').disabled=false;
+  }catch(error){if(request===sourceBrowseId && dialog.open)$('sourceBrowseStatus').textContent=error.message;}
+}
 function settingsView() {
   const c=data.coverage;
   const warningLabels={invalid_records:'格式无效的记录',partial_lines:'尚未写完的行（下次刷新重试）',counter_resets:'累计计数重置（使用最后一次用量）',unobserved_prefixes:'缺少起始历史的日志（仅计可确认用量）',last_only_events:'仅有单次用量的事件',inconsistent_counts:'不一致的缓存计数',orphan_forks:'缺少父会话的分支'};
-  return backgroundPanel()+`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>数据来源</h2><span class="badge">本机只读</span></div><form class="settings-body" id="settingsForm"><label class="field"><span>Codex 数据目录</span><textarea id="sourcePaths" rows="5" required spellcheck="false">${esc(settings.sources.join('\n'))}</textarea><p>每行一个绝对路径，指向含 sessions 或 archived_sessions 的 Codex 主目录。可添加从其他机器复制的目录；相同会话事件会去重。</p></label><label class="field"><span>统计时区</span><select id="settingsTimezone">${[...new Set([settings.timezone,'America/Los_Angeles','Asia/Shanghai','Asia/Tokyo','Europe/London','UTC'])].map(z=>`<option ${z===settings.timezone?'selected':''}>${esc(z)}</option>`).join('')}</select><p>按所选时区划分日期；每周从周一开始，自动处理夏令时。</p></label><label class="field"><span>头像字母</span><input id="settingsAvatar" maxlength="3" pattern="[A-Za-z0-9]{1,3}" required value="${esc(settings.avatar_initials || 'CU')}" autocomplete="off"><p>显示 1 至 3 个大写字母或数字。</p></label><label class="field"><span>统计起始日期</span><input id="settingsUsageSince" type="date" value="${esc(settings.usage_since || '')}"><p>从所选时区当天 00:00 起计算所有用量与 API 等价成本，包含本机和远程服务器。更早的记录不计入；留空恢复全部历史。</p></label><button class="button primary" type="submit">保存并重新读取</button><p class="inset-note">日志索引仅保存用量、会话标题、路径与额度快照。实时额度由 Codex 通过当前登录读取；本程序不读取或保存登录凭据。</p></form></section><section class="panel"><div class="panel-head"><h2>数据覆盖情况</h2></div><div class="settings-body"><dl class="definition"><dt>已知会话元数据</dt><dd>${c.metadata_sessions}</dd><dt>已统计日志会话</dt><dd>${c.sessions}</dd><dt>可读日志文件</dt><dd>${c.files}</dd><dt>缺少日志的已知会话</dt><dd>${c.missing_sessions}</dd><dt>源文件消失后保留的缓存</dt><dd>${c.retained_files}</dd><dt>最近扫描耗时</dt><dd>${c.scan_ms} ms</dd></dl><div class="help-copy"><p>这份看板代表<strong>配置目录中的可观测用量</strong>。没有日志的远程会话、云端会话和已删除历史不会自动补齐；元数据计数也不一定覆盖所有账号活动。</p><p>只有账号标记可用时才能区分本地账号分组。来源不明的历史会单列为“未标记账号”。</p><p>项目按工作目录归属；可访问的 Git 子目录和 worktree 会尽量合并回主仓库。</p></div>${Object.keys(c.warnings).length||c.issues.length?`<ul class="info-list">${Object.entries(c.warnings).map(([k,v])=>`<li>${esc(warningLabels[k]||k)}：${v}</li>`).join('')}${c.issues.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}</div></section></div><section class="panel price-spacer"><div class="settings-body help-copy"><h3>开源基础与定制</h3><p>基于 MIT 开源项目 <a href="https://github.com/physcom/claude-usage-dashboard" target="_blank" rel="noreferrer">physcom/claude-usage-dashboard</a> 定制。保留本地服务、缓存和启动方式，新增 Codex 原生日志解析、精确时区分桶、中文界面、价格覆盖与多目录合并。上游许可证随源码保留。</p></div></section>`;
+  return setupPanel()+`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>数据来源</h2><span class="badge">本机只读</span></div><form class="settings-body" id="settingsForm"><div class="field"><label for="sourcePaths">Codex 数据目录</label><div class="source-path-control"><textarea id="sourcePaths" rows="1" wrap="off" required spellcheck="false" placeholder="C:\\Users\\you\\.codex / /home/you/.codex">${esc(settings.sources.join('\n'))}</textarea><button type="button" class="button source-picker-open" data-pick-source>选择文件夹</button></div>${settings.setup?`<button type="button" class="text-button" data-default-source>使用检测到的默认目录</button>`:''}<div class="source-path-example"><span>路径示例：</span><span>Windows: <code>C:\\Users\\you\\.codex</code></span><span>macOS: <code>/Users/you/.codex</code></span><span>Linux: <code>/home/you/.codex</code></span></div><p>每行一个绝对路径，指向含 sessions 或 archived_sessions 的 Codex 主目录。可添加从其他机器复制的目录；相同会话事件会去重。</p></div><label class="field"><span>统计时区</span><select id="settingsTimezone">${[...new Set([settings.timezone,'America/Los_Angeles','Asia/Shanghai','Asia/Tokyo','Europe/London','UTC'])].map(z=>`<option ${z===settings.timezone?'selected':''}>${esc(z)}</option>`).join('')}</select><button class="text-button" type="button" data-local-timezone>使用浏览器所在时区</button><p>按所选时区划分日期；每周从周一开始，自动处理夏令时。</p></label><div class="field"><label for="settingsAvatar">头像文字</label><input id="settingsAvatar" aria-label="自定义头像文字" maxlength="3" pattern="[A-Za-z0-9\\u3400-\\u9fff]{1,3}" required value="${esc(settings.avatar_initials || 'CU')}" autocomplete="off"><p>自定义头像文字，支持一至三个英文字母、数字或汉字。保存后生效。</p></div><label class="field"><span>统计起始日期</span><input id="settingsUsageSince" type="date" value="${esc(settings.usage_since || '')}"><p>从所选时区当天 00:00 起计算所有用量与 API 等价成本，包含本机和远程服务器。更早的记录不计入；留空恢复全部历史。</p></label><div class="setup-actions"><button class="button" type="button" data-check-sources>检查目录（不保存）</button><button class="button primary" type="submit">${settings.setup?.first_run?'保存并开始使用':'保存并重新读取'}</button></div><div id="sourceCheckResult" role="status" aria-live="polite"></div><p class="inset-note">日志索引仅保存用量、会话标题、路径与额度快照。实时额度由 Codex 通过当前登录读取；本程序不读取或保存登录凭据。</p></form></section><section class="panel"><div class="panel-head"><h2>数据覆盖情况</h2></div><div class="settings-body"><dl class="definition"><dt>已知会话元数据</dt><dd>${c.metadata_sessions}</dd><dt>已统计日志会话</dt><dd>${c.sessions}</dd><dt>可读日志文件</dt><dd>${c.files}</dd><dt>缺少日志的已知会话</dt><dd>${c.missing_sessions}</dd><dt>源文件消失后保留的缓存</dt><dd>${c.retained_files}</dd><dt>最近扫描耗时</dt><dd>${c.scan_ms} ms</dd></dl><div class="help-copy"><p>这份看板代表<strong>配置目录中的可观测用量</strong>。没有日志的远程会话、云端会话和已删除历史不会自动补齐；元数据计数也不一定覆盖所有账号活动。</p><p>只有账号标记可用时才能区分本地账号分组。来源不明的历史会单列为“未标记账号”。</p><p>项目按工作目录归属；可访问的 Git 子目录和 worktree 会尽量合并回主仓库。</p></div>${Object.keys(c.warnings).length||c.issues.length?`<ul class="info-list">${Object.entries(c.warnings).map(([k,v])=>`<li>${esc(warningLabels[k]||k)}：${v}</li>`).join('')}${c.issues.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}</div></section></div><section class="panel price-spacer"><div class="settings-body help-copy"><h3>开源基础与定制</h3><p>基于 MIT 开源项目 <a href="https://github.com/physcom/claude-usage-dashboard" target="_blank" rel="noreferrer">physcom/claude-usage-dashboard</a> 定制。保留本地服务、缓存和启动方式，新增 Codex 原生日志解析、精确时区分桶、中文界面、价格覆盖与多目录合并。上游许可证随源码保留。</p></div></section>`;
 }
 function render() {
   const search=$('sessionSearch');
@@ -330,13 +434,13 @@ function render() {
   if (state.view==='models') html=unknownNotice()+ModelCharts.panel()+UsageInsights.cachePanel(data)+`<section class="panel"><div class="table-toolbar"><h2>模型用量汇总</h2><span class="subtle">当前筛选范围 · 不受图表勾选影响</span></div>${modelTable(data.models)}</section><div class="price-spacer">${notice()}</div>`;
   if (state.view==='pricing') html=pricingView();
   if (state.view==='quota') html=QuotaPage.panel();
-  if (state.view==='settings') html=remoteSettingsView()+settingsView();
+  if (state.view==='settings') html=settingsView()+remoteSettingsView();
   releaseCharts($('content'));
   UsageInsights.release($('content'));
   ModelCharts.release();
   ActivityHeatmap.release();
   ProjectTreemap.release();
-  $('content').innerHTML=html;
+  $('content').innerHTML=(!data?.coverage?.files && !data?.summary?.events && state.view==='overview'?`<section class="panel setup-panel"><div class="settings-body"><h2>先接入用量数据</h2><div>尚未读到本地日志。配置 Codex 数据目录即可查看项目和会话 Token，额度连接可以稍后完成。</div><button class="button primary" data-view="settings">配置数据来源</button></div></section>`:'')+html;
   if (state.view==='overview' && state.tab==='summary') { ActivityHeatmap.mount($('tokenActivity'),data); }
   if (state.view==='overview' && state.tab==='analysis') { mountChart($('trendChart'),data.timeline,state.metric);UsageInsights.drawComparison(data); }
   if (state.view==='quota') {QuotaPage.render(accountData);renderQuotaPace(paceFocus,paceOpened);}
@@ -350,7 +454,7 @@ function render() {
       $('sessionSearch').setSelectionRange(searchSelection.start,searchSelection.end,searchSelection.direction);
     }
   }
-  if(state.view==='settings'){paintBackground();readBackground();}
+  if(state.view==='settings'){$('content').insertAdjacentHTML('beforeend',backgroundPanel());paintSetupAccount();paintBackground();readBackground();}
   CompactTables.mount($('content'));
 }
 function setView(view, tab='summary') {
@@ -436,6 +540,23 @@ async function saveSettings(next) {
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button,[data-project],[data-project-detail],[data-session]'); if(!b) return;
   if(UsageInsights.handle(b))return;
+  if(b.dataset.defaultSource!==undefined && settings.setup){$('sourcePaths').value=settings.setup.default_source;$('sourcePaths').dispatchEvent(new Event('input',{bubbles:true}));$('sourcePaths').focus();}
+  if(b.dataset.localTimezone!==undefined){const zone=Intl.DateTimeFormat().resolvedOptions().timeZone,select=$('settingsTimezone');if(zone){if(![...select.options].some(o=>o.value===zone))select.add(new Option(zone,zone));select.value=zone;}}
+  if(b.dataset.browserLogin!==undefined)beginBrowserLogin();
+  if(b.dataset.pickSource!==undefined)openSourcePicker();
+  if(b.dataset.setupSource!==undefined){$('sourcePaths')?.focus();$('sourcePaths')?.scrollIntoView({block:'center'});}
+  if(b.dataset.setupRemote!==undefined){const field=$('remoteForm')?.querySelector('[name=host]');field?.focus();field?.scrollIntoView({block:'center'});}
+  if(b.dataset.parentSource!==undefined){const input=$('sourcePaths');input.value=input.value.split('\n').map(path=>path.trim()===b.dataset.parentSource?b.dataset.suggestedSource:path).join('\n');input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();}
+  if(b.dataset.checkSources!==undefined){
+    const host=$('sourceCheckResult'), paths=$('sourcePaths').value.split('\n').map(x=>x.trim()).filter(Boolean);
+    b.disabled=true;host.textContent='正在检查目录…';
+    try{
+      const result=await api('/api/setup/check',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':settings.csrf},body:JSON.stringify({sources:paths})});
+      if(paths.join('\n')!==$('sourcePaths').value.split('\n').map(x=>x.trim()).filter(Boolean).join('\n'))return;
+      const messages={ready:'已识别 Codex 目录；保存后读取用量，目录识别不代表已有 Token 记录。',child:'请选择上一级 Codex 主目录：',missing:'目录不存在，请检查路径或连接磁盘。',file:'这是文件，请填写 Codex 主目录。',unreadable:'目录无法读取，请检查当前用户的访问权限。',no_logs:'未识别到日志目录；请确认不是项目源码目录，或先在 Codex 中完成一次本地会话。'};
+      host.innerHTML='<ul>'+result.sources.map(row=>`<li><code>${esc(row.path)}</code><div>${esc(messages[row.status]||row.status)} ${row.suggested?`${esc(row.suggested)} <button type="button" class="text-button" data-parent-source="${esc(row.path)}" data-suggested-source="${esc(row.suggested)}">使用上一级目录</button>`:''}</div></li>`).join('')+'</ul>';
+    }catch(error){host.textContent=error.message;}finally{b.disabled=false;}
+  }
   if(b.dataset.view) setView(b.dataset.view);
   if(b.dataset.overviewTab)setView('overview',b.dataset.overviewTab);
   if(b.dataset.rangeJump) { state.range=b.dataset.rangeJump;state.page=1;updateControls();syncURL(true);load(); }
@@ -539,7 +660,7 @@ $('theme').addEventListener('click',()=>{document.body.classList.toggle('dark');
 $('export').addEventListener('click',()=>{const dimension={overview:'timeline',projects:'projects',sessions:'sessions',models:'models'}[state.view];location.href='/api/export?'+params({dimension,...(state.view==='sessions'?{search:state.search,sort:state.sort}:{})});});
 async function init() {
   if (state.view === 'projects' && state.project) { state.project = ''; syncURL(); }
-  try {settings=await api('/api/settings');if(settings.usage_since && !restored.has('range'))state.range='all';updateControls();refreshAccount();await load();}
+  try {settings=await api('/api/settings');if(settings.setup?.first_run && !restored.has('view')){state.view='settings';syncURL();}if(settings.usage_since && !restored.has('range'))state.range='all';updateControls();refreshAccount();await load();}
   catch(e){failure('初始化失败：'+e.message);$('loading').hidden=true;}
 }
 document.addEventListener('click',async e=>{
@@ -642,11 +763,12 @@ function renderQuotaPace(focus=quotaPaceFocus(), opened=null) {
 }
 function renderAccount() {
   const q=accountData;if(!q)return;
+  paintSetupAccount();
   QuotaTools.render(q);
   QuotaPage.render(q);
   if(state.view==='quota')$('updated').textContent=q.fetched_at?'额度更新于 '+accountTime(q.fetched_at):'等待首次额度读取';
   const plan=q.account?.plan,planName=plan?String(plan).replace(/\b\w/g,c=>c.toUpperCase()):'';
-  $('sidebarAccount').textContent=q.account?.label || 'Codex 账号';
+  paintIdentity();
   $('sidebarPlan').textContent=planName?`ChatGPT ${planName}`:q.problem?.kind==='signed_out'?'需要登录':q.fetched_at?'套餐信息暂不可用':'暂不可用';
   const old=q.stale || Boolean(q.transportError),status=q.busy?'正在更新':old?(q.problem||q.transportError?'更新失败':'等待更新'):q.fetched_at?'已连接':'等待连接';
   const windows=q.windows || [],prefix=windows.some(w=>w.bucket!=='codex');
@@ -654,7 +776,7 @@ function renderAccount() {
   const zoneLabel=settings?.timezone === 'Asia/Shanghai' ? '北京时间' : settings?.timezone || '';
   const refreshFocused = document.activeElement?.id === 'refreshAccount';
   const quotaScroll = $('accountQuota').scrollTop;
-  $('accountQuota').innerHTML=`<div class="account-heading"><h2 id="accountQuotaTitle">当前 Codex 账号</h2><button id="refreshAccount" class="icon-button" aria-label="刷新账号额度" title="刷新账号额度" ${q.busy?'disabled':''}>${icon('refresh')}</button></div><p class="account-footnote">${esc(planName||'套餐未知')} · ${status}</p><button class="button" data-view="quota" popovertarget="accountQuota" popovertargetaction="hide">查看额度与重置 →</button>`;
+  $('accountQuota').innerHTML=`<div class="account-heading"><h2 id="accountQuotaTitle">${esc(q.profile?.label || '当前 Codex 账号')}</h2><button id="refreshAccount" class="icon-button" aria-label="刷新账号额度" title="刷新账号额度" ${q.busy?'disabled':''}>${icon('refresh')}</button></div><p class="account-footnote">${esc(planName||'套餐未知')} · ${status}</p><button class="button" data-view="quota" popovertarget="accountQuota" popovertargetaction="hide">查看额度与重置 →</button>`;
   $('accountStatus').innerHTML=`<span class="account-state ${old?'is-stale':''}"><i></i>${status}</span><span class="quota-updated" title="${q.fetched_at?'更新于 '+accountTime(q.fetched_at):''}">${q.fetched_at?new Date(q.fetched_at).toLocaleTimeString('zh-CN',{timeZone:settings?.timezone || 'America/Los_Angeles',hour:'2-digit',minute:'2-digit',hour12:false})+' 更新':''}</span>`;
   if (refreshFocused) $('refreshAccount').focus({preventScroll:true});
   $('accountQuota').scrollTop = quotaScroll;
@@ -665,14 +787,14 @@ async function refreshAccount(force=false) {
   if(accountPending)return;
   accountPending=true;clearTimeout(accountTimer);
   try {
-    const response=await fetch(force?'/api/account/refresh':'/api/account',force?{method:'POST',headers:{'X-CSRF-Token':settings.csrf}}:{});
+    const response=await sessionFetch(force?'/api/account/refresh':'/api/account',force?{method:'POST',headers:{'X-CSRF-Token':settings.csrf}}:{});
     if(!response.ok)throw new Error('账号连接暂时不可用，请重试。');
     accountData=await response.json();renderAccount();
   } catch(e) {
     accountData={...(accountData || {windows:[]}),busy:false,stale:true,transportError:'无法连接额度服务，请稍后刷新。'};renderAccount();
   } finally {
     accountPending=false;
-    accountTimer=setTimeout(()=>{if(!document.hidden)refreshAccount();},accountData?.busy?1200:15000);
+    accountTimer=setTimeout(()=>{if(!document.hidden)refreshAccount();},accountData?.busy || ['starting','waiting'].includes(accountData?.browser_login?.status)?1200:15000);
   }
 }
 document.addEventListener('click',e=>{if(e.target.closest('#refreshAccount, [data-refresh-quota]'))refreshAccount(true);});

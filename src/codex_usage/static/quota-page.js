@@ -3,11 +3,12 @@
 const QuotaPage=(()=>{
   let forecast=null,pending=false,lastRequest=0,eventFilter='all',eventLimit=10,scope=null;
   const time=value=>value?accountTime(typeof value==='number'?value*1000:value):'未知';
+  const publicHome=typeof document!=='undefined'&&document.documentElement.lang.startsWith('en')?'https://codex-resets.com/':'https://codex-resets.com/zh-CN';
   const labels={official:'官方重置',credit:'手动重置卡重置',scheduled:'7 天周期重置'};
   const eventTitle=e=>e.kind==='scheduled' && e.label!=='每周额度'?'正常周期重置':labels[e.kind]||'额度变化';
-  const link=(url,label)=>url?`<a class="text-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';
+  const link=(url,label)=>typeof url==='string'&&/^https:\/\/(?:codex-resets\.com|x\.com|twitter\.com|openai\.com)(?:\/|$)/.test(url)?`<a class="text-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';
   function panel(){
-    return `<div id="quotaCurrent" class="quota-current"></div><div id="quotaPace"></div><section class="panel reset-records"><div class="panel-head"><div><h2>重置记录</h2><p data-help>只记录实际检测到的额度重置，保留 90 天。满额闲置时的截止时间变化不会另记事件。</p></div><label><span class="sr-only">筛选重置事件</span><select id="resetEventFilter" aria-label="筛选重置事件">${[['all','全部重置'],['official','官方重置'],['credit','重置卡重置'],['scheduled','周期重置']].map(([value,label])=>`<option value="${value}" ${eventFilter===value?'selected':''}>${label}</option>`).join('')}</select></label></div><div id="resetEventList"></div><p class="insight-note">偏离正常周期的额度恢复默认归为官方重置；同期卡数减少则归为手动重置卡重置。两种原因都是规则推断，非官方原因回执。卡片过期或同时发卡可能影响归因。</p></section><section class="panel reset-forecast"><div class="panel-head"><div><h2>官方重置预测</h2><p data-help>社区观察 · 与个人账号实际重置记录分开。</p></div>${link('https://codex-resets.com','Codex Resets')}</div><div id="resetForecastBody"></div></section><details class="quota-settings"><summary>额度提醒与采集设置</summary>${QuotaTools.settingsPanel()}</details>`;
+    return `<div id="quotaCurrent" class="quota-current"></div><div id="quotaPace"></div><section class="panel reset-records"><div class="panel-head"><div><h2>重置记录</h2><p data-help>只记录实际检测到的额度重置，保留 90 天。满额闲置时的截止时间变化不会另记事件。</p></div><label><span class="sr-only">筛选重置事件</span><select id="resetEventFilter" aria-label="筛选重置事件">${[['all','全部重置'],['official','官方重置'],['credit','重置卡重置'],['scheduled','周期重置']].map(([value,label])=>`<option value="${value}" ${eventFilter===value?'selected':''}>${label}</option>`).join('')}</select></label></div><div id="resetEventList"></div><p class="insight-note">偏离正常周期的额度恢复默认归为官方重置；同期卡数减少则归为手动重置卡重置。两种原因都是规则推断，非官方原因回执。卡片过期或同时发卡可能影响归因。</p></section><section class="panel reset-forecast"><div class="panel-head"><div><h2>公开重置动态</h2><p data-help>来自第三方对公开消息的整理，与个人账号实际重置记录分开。</p></div>${link(publicHome,'Codex Resets')}</div><div id="resetForecastBody"></div></section><details class="quota-settings"><summary>额度提醒与采集设置</summary>${QuotaTools.settingsPanel()}</details>`;
   }
   function currentMarkup(q){
     const credits=q?.reset_credits||{},details=credits.details;
@@ -34,18 +35,21 @@ const QuotaPage=(()=>{
     host.querySelectorAll('details').forEach(el=>{el.open=open.has(el.dataset.eventId);if(el.dataset.eventId===focused)el.querySelector('summary').focus({preventScroll:true});});
   }
   function forecastMarkup(f){
-    if(!f)return '<p class="reset-empty">正在读取公开预测…</p>';
-    const signal=f.signal,now=Date.now()/1000,valid=f.probability!=null&&f.fresh&&signal?.expires_at>now;
-    const status=valid?'社区估计 · 尚未校准':!f.fresh
-      ?f.problem?'预测来源暂时无法连接':f.busy?'正在更新预测来源':'来源数据已过期'
-      :!signal?'来源正常 · 暂无预测':signal.expires_at && signal.expires_at<=now
-        ?'来源正常 · 上次预测已过期':'来源正常 · 暂无有效概率';
-    return `<div class="reset-forecast-body"><div class="forecast-number"><span>${signal?.horizon==='within 24h'?'未来 24 小时':esc(signal?.horizon||'当前预测窗口')}</span><strong>${valid?Math.round(f.probability)+'%':'—'}</strong><span>${status}</span></div><div class="forecast-evidence">${valid?`<p>${signal.text?esc(signal.text):'查看原帖了解预测依据。'}</p><p>${link(signal.source,'预测依据原帖')} · ${time(signal.at)}</p><p>有效至 ${time(signal.expires_at)}</p>`:'<p data-help>来源正常表示已成功获取公开数据。Codex Resets 没有发布预测窗口，或预测已过期、未提供有效概率时，不显示百分比；这不代表重置概率为零。有新预测后会自动更新。</p>'}${f.problem?`<p class="is-stale">${esc(f.problem)}</p>`:''}<p>来源更新 ${time(f.generated_at)} · 本页每 5 分钟检查</p></div></div>${f.scheduled?`<p class="insight-note" data-help-keep>已收录待执行预告：${esc(f.scheduled.text)} ${link(f.scheduled.source,'查看预告')}</p>`:''}${f.latest?`<p class="insight-note" data-help-keep>最近公开重置消息：${time(f.latest.at)} ${link(f.latest.source,'查看原帖')}。<span data-help>消息发布不等于个人账号已重置。</span></p>`:''}<p class="insight-note">数据来自 ${link('https://codex-resets.com','Codex Resets')}；概率是该站对公开信号的判断，不是 OpenAI 承诺，不参与本账号的重置判定。</p>`;
+    if(!f)return '<p class="reset-empty">正在读取公开重置动态…</p>';
+    const now=Date.now()/1000,scheduled=f.scheduled,latest=f.latest,stats=f.stats||{};
+    const past=scheduled?.scheduled_for!=null&&scheduled.scheduled_for<=now;
+    const status=f.fresh?'来源已同步':f.problem?'同步暂时失败':f.busy?'正在同步来源':'来源数据已过期';
+    const kind=item=>({regular:'常规重置',banked:'发放重置卡'})[item?.reset_type]||'重置消息';
+    const announcement=item=>`<details class="reset-update-detail"><summary><span>公告内容</span>${link(item.source,'原帖')}</summary><div class="reset-update-copy"><p>公告时间 ${time(item.at)}</p>${item.text?`<p>${esc(item.text)}</p>`:''}</div></details>`;
+    const lastAt=latest?.at??stats.last_reset_at;
+    const days=lastAt!=null&&lastAt<=now?Math.round((now-lastAt)/86400*10)/10:null;
+    const scheduleTitle=!f.fresh?'上次获取的重置安排':!scheduled?'暂无已安排重置':past?'等待后续确认':'已安排重置';
+    return `<div class="reset-updates-body"><div class="reset-updates-status"><span class="${f.fresh?'':'is-stale'}" role="status">${status}${!f.fresh&&f.generated_at?' · 显示上次成功数据':''}</span><span>来源更新 ${time(f.generated_at)}</span></div>${f.problem?`<p class="is-stale">${esc(f.problem)}</p>`:''}<div class="reset-update-grid"><section class="reset-update-card"><div class="reset-update-heading"><h3>${scheduleTitle}</h3>${scheduled?`<span class="badge neutral">${kind(scheduled)}</span>`:''}</div>${scheduled?`<div class="reset-update-timing"><strong class="reset-scheduled-time">${scheduled.scheduled_for?`<span>公告预计时间</span> ${time(scheduled.scheduled_for)}`:'公告未提供执行时间'}</strong>${past?'<span class="is-stale">公告时间已过，来源尚未确认执行。</span>':f.fresh&&scheduled.scheduled_for?`<span>距公告时间约 ${number(Math.ceil((scheduled.scheduled_for-now)/3600))} 小时</span>`:''}</div>${announcement(scheduled)}`:`<p>${f.fresh?'来源当前没有待执行公告。':'同步成功后确认是否有新安排。'}</p>`}</section><section class="reset-update-card"><div class="reset-update-heading"><h3>最近公开重置消息</h3>${latest?`<span class="badge neutral">${kind(latest)}</span>`:''}</div>${latest?`<div class="reset-update-timing"><strong><span>公告时间</span> ${time(latest.at)}</strong></div>${announcement(latest)}`:'<p>暂无公开记录</p>'}</section></div><dl class="reset-update-stats"><div><dt>累计公开记录</dt><dd>${stats.total==null?'—':number(stats.total)+' 次'}</dd></div><div><dt>平均重置间隔</dt><dd>${stats.avg_interval_days==null?'—':number(stats.avg_interval_days)+' 天'}</dd></div><div><dt>距最近公开记录</dt><dd>${days==null?'—':number(days)+' 天'}</dd></div></dl><div class="reset-updates-footer"><span>数据来自 ${link(publicHome,'Codex Resets')}</span>${link(publicHome+'#log-heading','查看完整历史')}</div><p data-help>本页每 5 分钟按需同步公开公告。常规重置与发放重置卡是来源的消息分类，不代表此账号已恢复额度或收到卡片。公告时间已过也不代表重置完成；实际到账以上方账号记录为准。平均间隔仅描述历史，不用于预测下次重置。时间按看板时区显示。</p></div>`;
   }
   async function refreshForecast(){
     if(!document.getElementById('resetForecastBody')||pending||Date.now()-lastRequest<15000)return;
     pending=true;lastRequest=Date.now();
-    try{forecast=await api('/api/reset-forecast');}catch(_){forecast={...(forecast||{}),fresh:false,probability:null,problem:'无法读取社区预测，请稍后重试。'};}
+    try{forecast=await api('/api/reset-updates');}catch(_){forecast={...(forecast||{}),fresh:false,problem:'无法读取公开重置动态，请稍后重试。'};}
     finally{pending=false;QuotaDOM.patch(document.getElementById('resetForecastBody'),forecastMarkup(forecast));}
   }
   function render(q){

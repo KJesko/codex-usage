@@ -66,6 +66,34 @@ test('opening settings directly from the quota page loads its missing usage repo
   assert.equal(app.context.loads,1,'already loaded settings must not trigger another scan');
 });
 
+test('service restart renews a rejected operation once and preserves unsaved settings',async()=>{
+  const app=dashboard();
+  vm.runInContext("settings={csrf:'old',timezone:'unsaved'};",app.context);
+  const request=app.context.api('/api/settings',{method:'POST',headers:{'X-CSRF-Token':'old'},body:'draft'});
+  app.pending[0].resolve({status:403,ok:false,json:async()=>({error:'expired'})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(app.pending[1].url,'/api/settings');
+  app.pending[1].resolve({ok:true,json:async()=>({csrf:'new',timezone:'server'})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(app.pending[2].options.headers['X-CSRF-Token'],'new');
+  assert.equal(app.pending[2].options.body,'draft');
+  assert.equal(vm.runInContext('settings.timezone',app.context),'unsaved');
+  app.pending[2].resolve({status:403,ok:false,json:async()=>({error:'still rejected'})});
+  await assert.rejects(request,/still rejected/);
+  assert.equal(app.pending.length,3,'must not loop on a persistent rejection');
+});
+
+test('successful operations and transport errors are never replayed',async()=>{
+  const app=dashboard(),options={method:'POST',headers:{'X-CSRF-Token':'old'}};
+  const success=app.context.api('/api/settings',options);
+  app.pending[0].resolve({status:200,ok:true,json:async()=>({saved:true})});
+  assert.equal((await success).saved,true);
+  const failure=app.context.api('/api/settings',options);
+  app.pending[1].reject(new Error('connection lost'));
+  await assert.rejects(failure,/connection lost/);
+  assert.equal(app.pending.length,2);
+});
+
 test('late session response cannot replace a newer session',async()=>{
   const app=dashboard();
   const first=app.context.showSession('first');

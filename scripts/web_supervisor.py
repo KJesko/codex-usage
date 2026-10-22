@@ -10,15 +10,30 @@ import sys
 import threading
 import time
 import msvcrt
+import argparse
+from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'src'))
+from codex_usage.background_config import describe, identity, load_launch, save_launch, server_command
 STATE = Path.home() / ".codex-usage" / "web-service"
 
 
-def port_busy():
+def port_busy(port):
     with socket.socket() as sock:
         sock.settimeout(1)
-        return sock.connect_ex(("127.0.0.1", 8787)) == 0
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def occupied_phase(launch):
+    try:
+        with urlopen(f"http://127.0.0.1:{launch['port']}/api/health", timeout=2) as response:
+            health = json.load(response)
+        if isinstance(health, dict) and health.get('app') == 'codex-usage' and health.get('instance') == identity(launch['data_dir']):
+            return 'waiting_server'
+    except (OSError, ValueError):
+        pass
+    return 'port_conflict'
 
 
 def retry_delay(failures):
@@ -48,7 +63,7 @@ def write_status(**updates):
     os.replace(temporary, target)
 
 
-def main():
+def main(data_dir):
     STATE.mkdir(parents=True, exist_ok=True)
     lock = (STATE / "supervisor.lock").open("a+b")
     lock.seek(0)
@@ -73,10 +88,12 @@ def main():
     child = None
     try:
         while not (STATE / "disabled").exists():
+            launch = load_launch(data_dir)
             write_status(running=True)
-            if port_busy():
+            if port_busy(launch['port']):
+                write_status(phase=occupied_phase(launch), port=launch['port'])
                 if not waiting:
-                    log.info("Port 8787 already in use; waiting without starting a duplicate server.")
+                    log.info("Port %s already in use; waiting without starting a duplicate server.", launch['port'])
                 waiting = True
                 time.sleep(5)
                 continue
@@ -88,9 +105,10 @@ def main():
                     os.replace(output_path, STATE / "server.previous.log")
                 output = output_path.open("ab")
                 child = subprocess.Popen(
-                    [sys.executable, "-u", str(ROOT / "codex_usage.py"), "--no-browser"],
+                    server_command(sys.executable, ROOT, launch),
                     cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,
                     text=True, encoding="utf-8", errors="replace",
+                    env={**os.environ, **launch['environment']},
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 log.info("Web server started, pid=%s", child.pid)
@@ -99,7 +117,7 @@ def main():
                     previous = json.loads((STATE / "status.json").read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     previous = {}
-                write_status(running=True, last_started=time.time(), server_pid=child.pid,
+                write_status(running=True, phase='managed', port=launch['port'], last_started=time.time(), server_pid=child.pid,
                              last_restart=time.time() if previous.get("last_started") else None)
                 while child.poll() is None and not (STATE / "disabled").exists():
                     write_status(running=True)
@@ -132,4 +150,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data-dir', default=str(Path.home() / '.codex-usage'))
+    parser.add_argument('--port', type=int, default=8787)
+    parser.add_argument('--describe', action='store_true')
+    parser.add_argument('--configure', action='store_true')
+    args = parser.parse_args()
+    info = describe(args.data_dir)
+    STATE = Path(info['state_dir'])
+    if args.describe:
+        print(json.dumps(info))
+    elif args.configure:
+        save_launch(info['data_dir'], args.port)
+    else:
+        main(info['data_dir'])
