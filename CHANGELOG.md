@@ -9,6 +9,7 @@
 - Compact folder selection with Windows/macOS/Linux examples, dark-page background fix, richer calendar details and removal of the duplicate daily table.
 - Public reset announcements replace obsolete probability forecasts, with compact responsive cards.
 - Chinese/English installation troubleshooting and copyable Agent setup prompts; updated synthetic demo.
+- Short bilingual READMEs with separate setup, Agent, user and developer guides, included in source distributions.
 
 ## 1.2.0 — 2026-10-21
 
@@ -35,7 +36,7 @@ Interactive usage/model/quota charts; annual activity heatmap; project and sessi
 
 ### Upgrade / 升级
 
-Stop the service (disable its Windows supervisor first), back up `~/.codex-usage`, replace the source and reinstall dependencies. Keep the user-data directory. Re-register Windows startup if the source path changed. See [中文安装说明](README.md#安装稳定版与升级) or [English upgrade instructions](README.en.md#upgrade-safely).
+Stop the service (disable its Windows supervisor first), back up `~/.codex-usage`, replace the source and reinstall dependencies. Keep the user-data directory. Re-register Windows startup if the source path changed. See [中文安装说明](docs/SETUP.md#升级与备份) or [English upgrade instructions](docs/SETUP.en.md#upgrade--backup).
 
 ### Known limits / 已知边界
 

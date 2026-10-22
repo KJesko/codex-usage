@@ -30,4 +30,4 @@ codex-usage-desktop = "codex_usage.desktop:main"
 packages = ["src/codex_usage"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/codex_usage", "/README.md", "/README.en.md", "/CHANGELOG.md", "/SECURITY.md", "/CONTRIBUTING.md", "/demo", "/package.json", "/LICENSE", "/NOTICE", "/requirements*.txt", "/tests", "/codex_usage*.py", "/run.ps1", "/run.bat", "/build-windows.ps1", "/CodexUsage.spec", "/packaging", "/scripts"]
+include = ["/src/codex_usage", "/README.md", "/README.en.md", "/CHANGELOG.md", "/SECURITY.md", "/CONTRIBUTING.md", "/RELEASE_CHECKLIST.md", "/docs", "/demo", "/package.json", "/LICENSE", "/NOTICE", "/requirements*.txt", "/tests", "/codex_usage*.py", "/run.ps1", "/run.bat", "/build-windows.ps1", "/CodexUsage.spec", "/packaging", "/scripts", "/.github/workflows"]
