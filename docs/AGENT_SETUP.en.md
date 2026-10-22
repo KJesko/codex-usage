@@ -2,7 +2,7 @@
 
 [Back to README](../README.en.md) · [简体中文](AGENT_SETUP.md) | English
 
-Open the extracted project in Codex, Claude Code, Cursor, or another Agent with access to **your local terminal and files**, and paste the prompt below. It also works before downloading. An existing checkout takes priority; otherwise it requests the latest stable source release. Change the version preference to `main` for the current improvements.
+Open the extracted project in Codex, Claude Code, Cursor, or another Agent with access to **your local terminal and files**, and paste the prompt below. It also works before downloading. An existing checkout takes priority; otherwise it requests the latest stable source release. Choose `main` only if you want a development version.
 
 The prompt authorizes project dependency installation and local startup. You complete official account sign-in yourself. SSH and automatic startup are off by default; edit the preferences if needed. An Agent in WSL, a container or a remote machine must identify that environment before configuring anything.
 

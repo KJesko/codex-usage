@@ -12,4 +12,4 @@ Network features are documented in the [English user guide](docs/USER_GUIDE.en.m
 
 Please do not disclose exploitable details or private data in public issues. If GitHub's **Report a vulnerability** option is available in this repository's Security tab, use it. Otherwise open an issue asking for a private reporting channel **without exploit details or sensitive attachments**. We do not claim a staffed security response SLA.
 
-Include the release version, operating system, a sanitized reproduction and impact. Use synthetic fixtures. Security maintenance targets the latest stable web release; older desktop builds are not covered by the v1.2.0 web release validation.
+Include the release version, operating system, a sanitized reproduction and impact. Use synthetic fixtures. Security maintenance targets the latest stable web release; older desktop builds are not covered by the v1.3.0 web release validation.

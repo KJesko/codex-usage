@@ -4,7 +4,7 @@
 
 [安装环境](#安装环境与方式) · [首次日志接入](#首次接入日志) · [账号连接](#账号连接) · [启动参数](#常用配置与启动参数) · [SSH](#ssh-远程同步) · [后台启动](#windows-后台启动) · [升级](#升级与备份) · [排错](#安装与连接排错)
 
-本文对应当前 `main` 源码；v1.2.0 中尚无首次启动检查、浏览器登录、目录选择及自定义实例后台任务，请以旧版本包内文档为准。最短启动步骤见 [README](../README.md#启动)，可复制提示词见 [Agent 辅助安装](AGENT_SETUP.md)。
+本文适用于 v1.3.0 稳定网页版。最短启动步骤见 [README](../README.md#启动)，可复制提示词见 [Agent 辅助安装](AGENT_SETUP.md)。使用旧版本时请以包内文档为准。
 
 ## 安装环境与方式
 
@@ -14,18 +14,18 @@
 - 网页版不需要 Node.js、数据库服务器或桌面依赖。Node.js 仅用于开发测试。
 - Token 统计需要可读取的 Codex 日志；没有日志也能启动，但不会生成用量。
 - 额度连接另需已安装、已登录的本机 Codex 和网络；额度失败不阻断日志功能。
-- [稳定版下载](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0)选择 `web-source.zip`；[当前源码 ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip)包含最新改进，下载 ZIP 不需要 Git。
+- 推荐[下载 v1.3.0 网页版 ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip)；[Release 页面](https://github.com/KJesko/codex-usage/releases/tag/v1.3.0)提供更新说明、wheel 和校验文件。下载 ZIP 不需要 Git。
 
 缺少 Codex 时参考[官方安装说明](https://learn.chatgpt.com/docs/codex/cli)；订阅与 API Key 登录区别见[官方认证说明](https://learn.chatgpt.com/docs/auth)。
 
 ### 从 Git 获取源码
 
 ```sh
-git clone https://github.com/KJesko/codex-usage.git
+git clone --branch v1.3.0 --depth 1 https://github.com/KJesko/codex-usage.git
 cd codex-usage
 ```
 
-在含 `codex_usage.py`、`requirements.txt` 和 `src/` 的目录启动；不要把 `.codex` 日志目录当作安装目录。
+以上获取稳定版；参与开发时可省略 `--branch v1.3.0 --depth 1` 使用 `main`。在含 `codex_usage.py`、`requirements.txt` 和 `src/` 的目录启动；不要把 `.codex` 日志目录当作安装目录。
 
 ### Windows
 
@@ -57,7 +57,7 @@ codex-usage
 也可以从 Release 下载 wheel 后安装：
 
 ```sh
-python -m pip install ./codex_usage_local-1.2.0-py3-none-any.whl
+python -m pip install ./codex_usage_local-1.3.0-py3-none-any.whl
 codex-usage --no-browser
 ```
 
@@ -170,11 +170,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\enable-web-backgro
 
 ## 升级与备份
 
-升级前：如果启用了 Windows 自动保护，先运行 `scripts/enable-web-background.ps1 -Disable`，等待后台退出；手动启动的服务用 Ctrl+C 停止。服务停止后备份整个 `~/.codex-usage` 目录，再用新版替换源码或解压到新目录，重装依赖并启动。**不要删除用户数据目录**；本版沿用原有配置、日志索引和额度历史。已有浏览器的主题与隐藏项目设置继续保留。
+升级前：如果启用了 Windows 自动保护，先从旧安装目录运行 `scripts/enable-web-background.ps1 -Disable`，等待后台退出；手动启动的服务用 Ctrl+C 停止。服务停止后备份整个 `~/.codex-usage` 目录，再解压 v1.3.0 到固定目录，重装依赖并启动。**不要删除用户数据目录**；v1.3.0 沿用原有配置、日志索引和额度历史。已有浏览器的主题与隐藏项目设置在访问地址不变时继续保留。
 
 使用自定义应用数据目录时，停用命令也要传入 `-DataDir "你的目录"`，备份该目录；重新启用时同时传入原来的 `-DataDir` 和 `-Port`，或在以这两个参数启动的网页中打开自动保护。不要套用默认目录/端口命令，否则会操作另一个实例。
 
-如改动安装目录，请在新目录运行一次 `run.ps1`，再执行 `scripts/enable-web-background.ps1` 重新启用自启。不要复制旧 `.venv`。Linux / macOS 不提供内置登录自启；服务需保持运行才能采集额度。回退时停止服务并使用原源码及升级前备份，不要让两个版本同时写同一数据目录。
+在新版目录运行一次 `run.ps1`（自定义实例保留原来的启动参数），然后从当前实例的设置页重新启用后台保护。不要复制旧 `.venv`。用 `python codex_usage.py --version` 确认显示 `1.3.0`，并检查项目用量、额度历史及最近成功同步时间。Linux / macOS 不提供内置登录自启；服务需保持运行才能采集额度。回退时停止服务并使用原源码及升级前备份，不要让两个版本同时写同一数据目录。
 
 校验下载包：Windows 使用 `Get-FileHash 文件名 -Algorithm SHA256`；Linux 使用 `sha256sum`，macOS 使用 `shasum -a 256`，与 Release 中 `SHA256SUMS.txt` 比对。哈希用于检测传输差错，不代表代码签名。
 

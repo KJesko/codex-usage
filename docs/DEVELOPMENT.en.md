@@ -56,7 +56,7 @@ English UI resources live in `src/codex_usage/locales/en.json`. `web_i18n.py` ge
 
 ## Windows desktop builds
 
-This is a separate build path; the v1.2.0 web release does not ship a new desktop executable. On Windows x64 with Python 3.12:
+This is a separate build path; the v1.3.0 web release does not ship a new desktop executable. On Windows x64 with Python 3.12:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
@@ -77,7 +77,7 @@ To run a desktop window during development:
 
 Keep the README focused on introduction, download, startup and documentation links. Put installation/account/background details in `docs/SETUP.en.md`, Agent prompts in `docs/AGENT_SETUP.en.md`, feature/accounting/privacy details in `docs/USER_GUIDE.en.md`, and developer material here. Maintain matching Chinese files and resolve links/images relative to the containing document.
 
-The source-distribution include list in `pyproject.toml` must carry `docs/`, root guides and referenced assets for offline reading. The demo ships only allowlisted frontend assets and synthetic data. The previous stable-release validation is recorded in [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md).
+The source-distribution include list in `pyproject.toml` must carry `docs/`, root guides and referenced assets for offline reading. The demo ships only allowlisted frontend assets and synthetic data. This release's validation is recorded in [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md).
 
 ## Attribution & license
 

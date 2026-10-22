@@ -15,10 +15,10 @@ Install on the computer and OS user where you use Codex. Requires **Python 3.10+
 
 | Version | Download | Choose when |
 | --- | --- | --- |
-| Stable v1.2.0 | [Release](https://github.com/KJesko/codex-usage/releases/tag/v1.2.0), asset `codex-usage-1.2.0-web-source.zip` | You prefer a published stable version |
-| Current `main` source | [Download ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip) | You want the latest improvements, not yet a stable release |
+| **Stable web v1.3.0 (recommended)** | **[Download ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip)** · [Release notes & checksums](https://github.com/KJesko/codex-usage/releases/tag/v1.3.0) | New installs and upgrades |
+| Development source `main` | [Download ZIP](https://github.com/KJesko/codex-usage/archive/refs/heads/main.zip) | Development or trying upcoming changes |
 
-These docs describe the current source. First-launch guidance, browser sign-in, folder selection and background tasks with custom ports/data folders are not included in v1.2.0; follow that archive's bundled docs. For an existing installation, read [Upgrade & backup](docs/SETUP.en.md#upgrade--backup) first.
+v1.3.0 includes first-launch guidance, browser sign-in, folder selection and background operation with custom ports/data folders. This is a web-only release. For an existing installation, read [Upgrade & backup](docs/SETUP.en.md#upgrade--backup) first.
 
 ## Start
 

@@ -57,7 +57,7 @@ python -m http.server 8791 --bind 127.0.0.1 --directory dist
 
 ## Windows 桌面构建
 
-这是单独的构建方式；v1.2.0 网页版发布不提供新的桌面可执行文件。
+这是单独的构建方式；v1.3.0 网页版发布不提供新的桌面可执行文件。
 
 在 Windows x64、Python 3.12 环境中运行：
 
@@ -80,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 
 README 只保留介绍、下载、启动和文档入口。安装/连接/后台问题放入 `docs/SETUP.md`，Agent 提示词放入 `docs/AGENT_SETUP.md`，功能/统计/隐私说明放入 `docs/USER_GUIDE.md`；开发资料集中在本文。对应 `.en.md` 同步维护，链接与图片相对于当前文档目录。
 
-源码包的 `pyproject.toml` include 列表应包含 `docs/`、根目录指南及引用资源，使离线阅读不会丢失链接。在线演示只发布允许的合成数据和前端资产，不复制个人资料。旧版发布验证记录见 [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md)。
+源码包的 `pyproject.toml` include 列表应包含 `docs/`、根目录指南及引用资源，使离线阅读不会丢失链接。在线演示只发布允许的合成数据和前端资产，不复制个人资料。本版发布验证记录见 [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md)。
 
 ## 来源与许可证
 
