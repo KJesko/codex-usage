@@ -2,6 +2,8 @@
 
 ## Unreleased — web/source only
 
+- 数据更新状态移至「数据覆盖情况」，正常状态与更新时间合并为一行；自动保存说明收进「数据来源」帮助，逐项保留实际保存进度和错误反馈。Move update status into Data coverage, show healthy timestamps inline, and keep autosave guidance in source help while retaining actionable save feedback.
+
 - 网页设置增加逐项自动保存反馈、输入校验和失败重试；修改按字段串行提交，刷新保留输入与焦点，保存和数据读取分别提示。新增本地日志、远程服务器、账号额度、模型价格的独立更新时间与异常处理入口。大列表支持搜索分页，轮询防重入并在连接失败时退避，清理失效弹层并限制界面状态缓存。Web settings now show per-field save feedback and retries, preserve drafts/focus, and distinguish saved changes from refresh failures. A source-status panel reports independent update times and recovery actions. Large selectors are searchable and paginated, polling is bounded, and stale UI controls are released.
 
 - 登录从当前页面直接打开官方浏览器流程；登录成功优先从本机凭证提取仅用于显示的脱敏邮箱，额度异步恢复；修复取消后立即重试的流程竞争并补充安全的失败阶段诊断。Sign in directly without navigation, show masked local identity promptly, refresh quota asynchronously, and serialize cancelled sign-in retries.
