@@ -22,6 +22,12 @@ from .quota_history import QuotaHistory
 from .quota_alerts import QuotaAlerts, DEFAULT_ALERTS
 
 
+# A valid quota response can take about a minute while Codex resolves routing
+# and fetches reset-credit details. Do not kill that work after 25 seconds.
+QUOTA_REQUEST_TIMEOUT = 90
+SERVICE_FAILURES_BEFORE_RECONNECT = 3
+
+
 class AccountError(Exception):
     def __init__(self, kind, message, stage=None):
         super().__init__(message)
@@ -202,10 +208,11 @@ def read_quota(rpc):
 class AccountConnection:
     """Reuse the authenticated process; identify each live quota independently."""
     def __init__(self, factory=None):
-        self.factory = factory or AccountRPC
+        self.factory = factory or (lambda: AccountRPC(timeout=QUOTA_REQUEST_TIMEOUT))
         self.rpc = None
         self.lock = threading.Lock()
         self.closed = False
+        self.service_failures = 0
 
     def __call__(self):
         with self.lock:
@@ -220,18 +227,25 @@ class AccountConnection:
                         except Exception:
                             self._disconnect()
                             raise
-                    return read_quota(self.rpc)
+                    data = read_quota(self.rpc)
+                    self.service_failures = 0
+                    return data
                 except AccountError as exc:
                     if exc.kind in ('connection_lost', 'timeout', 'signed_out', 'unsupported'):
                         self._disconnect()
+                    elif exc.kind in ('routing_timeout', 'offline'):
+                        self.service_failures += 1
+                        if self.service_failures >= SERVICE_FAILURES_BEFORE_RECONNECT:
+                            self._disconnect()
                     # Reconnect a broken transport once, but do not loop on a
-                    # service-side routing failure. The next scheduled refresh
-                    # retries that request on the same, already started process.
+                    # service-side failure. Repeated failures retire the process
+                    # so the next scheduled refresh can establish a new route.
                     if exc.kind == 'connection_lost' and attempt == 0:
                         continue
                     raise
 
     def _disconnect(self):
+        self.service_failures = 0
         if self.rpc is not None:
             rpc, self.rpc = self.rpc, None
             rpc.close()
@@ -275,6 +289,17 @@ class AccountQuota:
         self.started_at = None
         self.attempt_at = None
         self.failures = 0
+        self.last_duration = None
+        self.suspended = False
+        self.generation = 0
+
+    def set_signed_out(self, signed_out):
+        with self.lock:
+            self.suspended = signed_out
+            self.generation += 1
+            self.data = self.identity = self.history_scope = self.error = None
+            self.active_alerts = []
+            self.success_at = self.attempt = None
 
     def start(self):
         with self.lock:
@@ -327,18 +352,21 @@ class AccountQuota:
         with self.lock:
             elapsed = float('inf') if self.attempt is None else time.monotonic() - self.attempt
             # Even manual refresh has a short debounce to avoid request storms.
-            if self.closed or self.busy or elapsed < (5 if force else self.interval):
+            if self.closed or self.suspended or self.busy or elapsed < (5 if force else self.interval):
                 return
             self.busy, self.attempt = True, time.monotonic()
             self.attempt_at = datetime.now(timezone.utc).isoformat()
-            self.thread = threading.Thread(target=self._refresh, daemon=True)
+            self.thread = threading.Thread(target=self._refresh, args=(self.generation,), daemon=True)
             self.thread.start()
 
-    def _refresh(self):
+    def _refresh(self, generation=None):
+        started = time.monotonic()
         try:
             data = self.fetcher()
             identity = data.get('_account_key')
             with self.lock:
+                if self.suspended or (generation is not None and generation != self.generation):
+                    return
                 zone, alert_config = self.timezone_name, dict(self.alert_config)
             active_alerts = []
             if self.history and not data.get('_account_key'):
@@ -360,6 +388,8 @@ class AccountQuota:
                     data['alerts_problem'] = '额度提醒暂时无法保存，实时额度仍可查看。'
             data.pop('_account_key', None)
             with self.lock:
+                if self.suspended or (generation is not None and generation != self.generation):
+                    return
                 self.data, self.error = data, None
                 self.success_at = time.monotonic()
                 if identity != self.identity:
@@ -369,6 +399,8 @@ class AccountQuota:
         except Exception as exc:
             error = exc if isinstance(exc, AccountError) else AccountError('unavailable', '账号连接暂时不可用，请检查 Codex 后重试。')
             with self.lock:
+                if self.suspended or (generation is not None and generation != self.generation):
+                    return
                 self.error = {'kind': error.kind, 'message': str(error), 'stage': error.stage}
                 self.failures += 1
                 if error.kind in ('signed_out', 'unsupported'):
@@ -378,6 +410,7 @@ class AccountQuota:
                     self.active_alerts = []
         finally:
             with self.lock:
+                self.last_duration = round(time.monotonic() - started, 1)
                 self.busy = False
 
     def status(self):
@@ -394,10 +427,12 @@ class AccountQuota:
                                                    self.active_alerts if not stale and self.alert_config['enabled'] else ())
                 except sqlite3.Error:
                     data['alerts_problem'] = '提醒记录暂不可用'
-            return {**data, 'alerts': alerts, 'history_scope': self.history_scope,
-                    'collector': {'running': bool(self.collector_thread and self.collector_thread.is_alive() and not self.closed),
+            return {**data, 'signed_out': self.suspended, 'alerts': alerts, 'history_scope': self.history_scope,
+                    'collector': {'running': bool(self.collector_thread and self.collector_thread.is_alive() and not self.closed and not self.suspended),
                                   'started_at': self.started_at, 'last_attempt': self.attempt_at,
                                   'last_success': data.get('fetched_at'), 'failures': self.failures,
+                                  'request_timeout_seconds': QUOTA_REQUEST_TIMEOUT,
+                                  'last_duration_seconds': self.last_duration,
                                   'interval_seconds': self.interval, 'retention_days': 90},
                     'busy': self.busy, 'stale': stale, 'problem': self.error,
                     'refresh_seconds': self.interval, 'scope': 'account', 'source': 'codex-app-server'}

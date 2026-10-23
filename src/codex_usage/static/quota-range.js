@@ -146,8 +146,8 @@ const QuotaRange=(()=>{
       state.hover=null;host.querySelector('.quota-range-crosshair')?.setAttribute('hidden','');
       tooltip.hidden=true;host.removeAttribute('aria-describedby');
     }
-    function showTooltip(text,p){
-      if(tooltip.textContent!==text)tooltip.textContent=text;
+    function showTooltip(text,p,rich=false){
+      if(rich){if(tooltip.innerHTML!==text)tooltip.innerHTML=text;}else if(tooltip.textContent!==text)tooltip.textContent=text;
       tooltip.hidden=false;host.setAttribute('aria-describedby',tooltip.id);
       const width=tooltip.offsetWidth,height=tooltip.offsetHeight;
       const x=p.x+14+width<=state.width-8?p.x+14:p.x-width-14;
@@ -161,7 +161,7 @@ const QuotaRange=(()=>{
       if(hover.ids){
         const events=group.events.filter(e=>hover.ids.includes(e.id));
         if(!events.length){hideHover();return;}
-        showTooltip(events.map(e=>eventDetail(e,q.timezone)).join('\n'),hover);return;
+        showTooltip(events.map(e=>`<div class="reset-tooltip-event"><strong>${esc(title(e))}</strong><div class="reset-tooltip-value">${number(100-e.before_used)}% → ${number(100-e.after_used)}%</div><div>剩余额度</div><dl><dt>首次检测</dt><dd>${esc(stamp(e.at,q.timezone))}</dd><dt>发生区间</dt><dd>${esc(stamp(e.since,q.timezone))}<br>— ${esc(stamp(e.at,q.timezone))}</dd></dl></div>`).join(''),hover,true);return;
       }
       const p=hover;
       if(!inPlot(p)){hideHover();return;}

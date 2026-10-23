@@ -30,11 +30,19 @@ class BrowserLogin:
 
     def start(self):
         with self.lock:
-            if self.thread and self.thread.is_alive():
+            previous = self.thread
+            if previous and previous.is_alive() and not self.stop.is_set():
                 return
-            self.stop.clear()
+            self.stop = threading.Event()
+            stop = self.stop
             self.state = {'status':'starting'}
-            self.thread = threading.Thread(target=self.run,daemon=True,name='browser-login')
+            def launch():
+                # Release the previous login callback port before starting another attempt.
+                if previous and previous.is_alive():
+                    previous.join()
+                if not stop.is_set():
+                    self.run(stop)
+            self.thread = threading.Thread(target=launch,daemon=True,name='browser-login')
             self.thread.start()
 
     def cancel(self):
@@ -42,22 +50,26 @@ class BrowserLogin:
             self.stop.set()
             self.state = {'status':'cancelled'}
 
-    def run(self):
+    def run(self, stop=None):
+        stop = stop or self.stop
         rpc = None
         login_id = None
+        stage = 'initialize'
         try:
             rpc = self.factory()
             initialize(rpc)
+            stage = 'start'
             result = rpc.call('account/login/start', {'type':'chatgpt'})
             login_id = result.get('loginId')
             url = checked_url(result.get('authUrl'))
             if not isinstance(login_id,str) or not login_id:
                 raise ValueError('Missing login id')
             with self.lock:
-                if not self.stop.is_set():
+                if not stop.is_set():
                     self.state = {'status':'waiting','url':url}
+            stage = 'wait_completion'
             deadline = time.monotonic()+300
-            while not self.stop.is_set() and time.monotonic()<deadline:
+            while not stop.is_set() and time.monotonic()<deadline:
                 try:
                     message = rpc.notifications.get(timeout=.5)
                 except queue.Empty:
@@ -67,21 +79,25 @@ class BrowserLogin:
                 params = message.get('params',{})
                 if params.get('loginId') != login_id:
                     continue
+                stage = 'completion_notification'
                 if params.get('success') is not True:
                     raise ValueError('Login failed')
-                if self.stop.is_set():
+                if stop.is_set():
                     return
-                self.completed()
                 with self.lock:
+                    if stop.is_set():
+                        return
+                    stage = 'save_login_state'
+                    self.completed()
                     self.state = {'status':'success'}
                 return
-            if not self.stop.is_set():
+            if not stop.is_set():
                 with self.lock:
                     self.state = {'status':'expired'}
-        except Exception:
+        except Exception as exc:
             with self.lock:
-                if not self.stop.is_set():
-                    self.state = {'status':'failed'}
+                if not stop.is_set():
+                    self.state = {'status':'failed', 'stage':stage, 'error_type':type(exc).__name__}
         finally:
             if rpc:
                 if login_id and self.status()['status'] != 'success':

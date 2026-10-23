@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Web isolation checks</title>
+<link rel="stylesheet" href="../src/codex_usage/static/style.css">
+<script src="../src/codex_usage/static/quota-dom.js" defer></script>
+<script src="../src/codex_usage/static/themed-select.js" defer></script>
+<script src="../src/codex_usage/static/web-state.js" defer></script>
+<script src="../src/codex_usage/static/web-feedback.js" defer></script>
+<script src="web_soak.js" defer></script>
+</head><body style="padding:24px;display:block;max-width:960px;margin:auto">
+<h1>Isolated web checks</h1><p>Synthetic data only. No production settings or account requests.</p>
+<button id="runChecks" class="button primary">Run 1,000 update cycles</button><pre id="results" role="status">Ready</pre>
+<section class="panel appearance-panel"><div class="panel-head"><h2>Save feedback fixture</h2></div><div class="settings-body">
+<div class="appearance-row"><label for="settingsAvatar">Avatar</label><input id="settingsAvatar" value="CU" maxlength="3"></div></div></section>
+<div class="data-settings-group"></div><div id="selectHost"></div><div id="clockTick"></div>
+</body></html>

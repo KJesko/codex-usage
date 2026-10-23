@@ -38,7 +38,7 @@ class BrowserLoginTests(unittest.TestCase):
         for rpc in (FakeRPC(False),FakeRPC(url='https://evil.test/authorize')):
             completed=[];login=BrowserLogin(lambda:completed.append(True),lambda:rpc)
             login.start();login.thread.join(2)
-            self.assertEqual(login.status(),{'status':'failed'})
+            self.assertEqual(login.status()['status'],'failed')
             self.assertEqual(completed,[]);self.assertTrue(rpc.closed)
 
     def test_cancel_clears_url_and_cancels_only_pending_login(self):
@@ -50,6 +50,21 @@ class BrowserLoginTests(unittest.TestCase):
         self.assertIn('account/login/cancel',rpc.calls)
         self.assertNotIn('account/logout',rpc.calls)
         self.assertEqual(completed,[])
+
+    def test_cancel_then_immediate_restart_waits_for_old_flow(self):
+        first, second=FakeRPC(None),FakeRPC()
+        sequence=iter([first,second]);done=[];ready=threading.Event()
+        def factory():
+            rpc=next(sequence);ready.set();return rpc
+        login=BrowserLogin(lambda:done.append(True),factory)
+        login.start();self.assertTrue(ready.wait(2))
+        login.cancel()
+        login.start()
+        login.thread.join(3)
+        self.assertEqual(login.status(),{'status':'success'})
+        self.assertEqual(done,[True])
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
 
     def test_authorization_url_restrictions(self):
         for url in ('http://auth.openai.com/a','https://auth.openai.com.evil.test/a',

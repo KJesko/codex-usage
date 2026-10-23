@@ -2,7 +2,7 @@
 
 const QuotaTools=(()=>{
   let historical=null,historyPending=false,historyError='',historyController=null,scope=null;
-  let rangeVersion=null,lastQuota=null;
+  let rangeVersion=null,lastQuota=null,ackPending=false;
   const storageKey='codex-usage-notifications',seenKey='codex-usage-notified';
   const time=value=>accountTime(typeof value==='number'?value*1000:value);
   function display(q) {
@@ -30,7 +30,8 @@ const QuotaTools=(()=>{
   function collectionMarkup(q,report) {
     const collector=q?.collector,logs=q?.usage_collector||report?.collector;
     const failed=q?.stale||q?.transportError||q?.history_problem||q?.alerts_problem||logs?.problem;
-    return `<details class="collection-status"><summary><span class="status-dot ${failed?'is-stale':''}"></span>${collector?.running?'额度采集 · 每 '+(collector.interval_seconds||60)+' 秒':'额度采集未运行'}<span>额度 ${q?.fetched_at?time(q.fetched_at):'等待首次成功'}${failed?' · 需要关注':''}</span></summary><div class="collection-details"><p>本地服务运行时，关闭网页仍会采集；关机、休眠或退出服务时暂停。额度历史保留 90 天。</p><p>额度与重置卡：共用一次额度读取，默认每 ${collector?.interval_seconds||60} 秒请求；不额外轮询账号资料。手动刷新可提前请求，最短间隔 5 秒，同一时间只运行一个请求。</p><p>网页状态：可见时通常每 15 秒读取本地缓存，额度正在更新时每 1.2 秒检查一次；不代表再次向 Codex 请求额度。</p><p>图表自动调整显示精度，只读取已保存的历史记录；缩放、拖动和选择日期不会额外请求额度；有新额度记录后自动更新曲线。</p><p>公开重置动态：本页每 5 分钟按需检查 Codex Resets。Token 日志：每 ${logs?.scan_interval_seconds||30} 秒扫描本地文件，不是额度请求。</p><p>额度最近成功：${q?.fetched_at?time(q.fetched_at):'暂无'} · 连续失败 ${collector?.failures||0} 次</p><p>日志最近采集：${logs?.last_scan?time(logs.last_scan):'暂无'}${logs?.problem?' · '+esc(logs.problem):''}</p>${(report?.remotes||[]).map(r=>`<p>${esc(r.name)}：${!r.enabled?'已暂停':r.error?'同步失败，保留上次数据':r.busy?'同步中':'正常'}${r.synced_at?' · 最近成功 '+time(r.synced_at):''}</p>`).join('')}${[q?.history_problem,q?.alerts_problem,historyError].filter(Boolean).map(message=>`<p class="is-stale">${esc(message)}</p>`).join('')}</div></details>`;
+    const connectionDetails=`<p>单次额度请求最多等待 ${collector?.request_timeout_seconds||90} 秒，慢请求期间不会重复发起；失败后自动重试。${Number.isFinite(collector?.last_duration_seconds)?` 上次请求耗时 ${collector.last_duration_seconds} 秒。`:''}</p>${q?.problem?.message?`<p class="is-stale">额度读取：${esc(q.problem.message)}</p>`:''}${q?.transportError?`<p class="is-stale">${esc(q.transportError)}</p>`:''}<p>账号邮箱优先使用本机登录信息，立即脱敏显示；没有可用信息时才单独查询一次，不定时查询。读取失败时可手动重新连接额度以重试。</p>${q?.profile_status?.problem?`<p class="is-stale">账号邮箱：${esc(q.profile_status.problem.message)}</p>`:''}`;
+    return `<details class="collection-status"><summary><span class="status-dot ${failed?'is-stale':''}"></span>${collector?.running?'额度采集 · 每 '+(collector.interval_seconds||60)+' 秒':'额度采集未运行'}<span>额度 ${q?.fetched_at?time(q.fetched_at):'等待首次成功'}${failed?' · 需要关注':''}</span></summary><div class="collection-details"><p>本地服务运行时，关闭网页仍会采集；关机、休眠或退出服务时暂停。额度历史保留 90 天。</p><p>额度与重置卡：共用一次额度读取，默认每 ${collector?.interval_seconds||60} 秒请求。手动刷新可提前请求，最短间隔 5 秒，同一时间只运行一个请求。</p>${connectionDetails}<p>网页状态：可见时通常每 15 秒读取本地缓存，额度正在更新时每 1.2 秒检查一次；不代表再次向 Codex 请求额度。</p><p>图表自动调整显示精度，只读取已保存的历史记录；缩放、拖动和选择日期不会额外请求额度；有新额度记录后自动更新曲线。</p><p>公开重置动态：本页每 5 分钟按需检查 Codex Resets。Token 日志：每 ${logs?.scan_interval_seconds||30} 秒扫描本地文件，不是额度请求。</p><p>额度最近成功：${q?.fetched_at?time(q.fetched_at):'暂无'} · 连续失败 ${collector?.failures||0} 次</p><p>日志最近采集：${logs?.last_scan?time(logs.last_scan):'暂无'}${logs?.problem?' · '+esc(logs.problem):''}</p>${(report?.remotes||[]).map(r=>`<p>${esc(r.name)}：${!r.enabled?'已暂停':r.error?'同步失败，保留上次数据':r.busy?'同步中':'正常'}${r.synced_at?' · 最近成功 '+time(r.synced_at):''}</p>`).join('')}${[q?.history_problem,q?.alerts_problem,historyError].filter(Boolean).map(message=>`<p class="is-stale">${esc(message)}</p>`).join('')}</div></details>`;
   }
   async function loadRange(preserve=false) {
     historyController?.abort();if(!preserve)historical=null;historyError='';
@@ -74,11 +75,14 @@ const QuotaTools=(()=>{
     const items=q?.alerts||[],active=items.filter(a=>a.active&&!a.acknowledged&&!q.stale&&!q.transportError);
     const unread=items.filter(a=>!a.acknowledged).length;
     const button=document.getElementById('alertsButton');
-    button.textContent=unread?`提醒 ${unread}`:'提醒';button.classList.toggle('has-alerts',active.length>0);
+    button.innerHTML=icon('bell')+(unread?`<span class="alerts-count" aria-hidden="true">${unread>99?'99+':unread}</span>`:'');
     button.setAttribute('aria-label',`额度提醒，${unread} 条未读`);
     document.getElementById('quotaAlertBanner').innerHTML=active.length?`<div class="quota-alert-banner" role="status"><span>${esc(active[0].message)}${active.length>1?` 另有 ${active.length-1} 条提醒。`:''}</span><button class="text-button" popovertarget="alertsPopover">查看提醒</button><button class="text-button" data-ack-alert="${esc(active[0].id)}">知道了</button></div>`:'';
     const popup=document.getElementById('alertsPopover'),scroll=popup.scrollTop;
-    popup.innerHTML=`<div class="filter-heading"><h2>额度提醒</h2><button class="icon-button" popovertarget="alertsPopover" popovertargetaction="hide" aria-label="关闭额度提醒">×</button></div><p class="alerts-intro">按账号和额度周期记录，同类提醒每个使用段只出现一次，重置后重新计算。</p>${items.map(a=>`<article class="alert-item"><p>${esc(a.message)}</p><div><span>${time(a.at)} · ${a.active?'当前提醒':'历史记录'}</span>${a.acknowledged?'<span>已读</span>':`<button class="text-button" data-ack-alert="${esc(a.id)}">标为已读</button>`}</div></article>`).join('')||'<p class="empty-alerts">暂无额度提醒</p>'}<button class="text-button" data-view="quota" popovertarget="alertsPopover" popovertargetaction="hide">设置提醒阈值 →</button>`;
+    const historyOpen=popup.querySelector('.alerts-history')?.open||false;
+    const unreadItems=items.filter(a=>!a.acknowledged),readItems=items.filter(a=>a.acknowledged);
+    const row=a=>`<article class="alert-item"><p>${esc(a.message)}</p><div><span>${time(a.at)}</span>${a.acknowledged?'<span>已读</span>':`<button class="text-button" data-ack-alert="${esc(a.id)}" ${ackPending?'disabled':''}>标为已读</button>`}</div></article>`;
+    popup.innerHTML=`<div class="alerts-heading"><h2>额度提醒</h2><div class="alerts-toolbar"><button class="text-button" id="ackAllAlerts" ${!unread||ackPending?'disabled':''}>全部已读</button><button class="icon-button" popovertarget="alertsPopover" popovertargetaction="hide" aria-label="关闭额度提醒">×</button></div></div><div class="alerts-unread">${unreadItems.map(row).join('')||'<p class="empty-alerts">暂无未读提醒</p>'}</div>${readItems.length?`<details class="alerts-history" ${historyOpen?'open':''}><summary>历史记录 <span>(${readItems.length})</span></summary>${readItems.map(row).join('')}</details>`:''}<button class="text-button" data-view="quota" popovertarget="alertsPopover" popovertargetaction="hide">设置提醒阈值 →</button>`;
     popup.scrollTop=scroll;position();notifyDesktop(active);
   }
   function settingsPanel() {
@@ -101,9 +105,14 @@ const QuotaTools=(()=>{
     });
     document.addEventListener('click',async e=>{
       const b=e.target.closest('button');if(!b)return;
-      if(b.dataset.ackAlert){
-        b.disabled=true;
-        try{accountData=await api('/api/account/acknowledge?'+new URLSearchParams({id:b.dataset.ackAlert}),{method:'POST',headers:{'X-CSRF-Token':settings.csrf}});renderAccount();}catch(error){b.disabled=false;notify('提醒暂未保存，请重试');}
+      if(b.dataset.ackAlert || b.id==='ackAllAlerts'){
+        if(ackPending)return;
+        const ids=b.dataset.ackAlert?[b.dataset.ackAlert]:(accountData?.alerts||[]).filter(a=>!a.acknowledged).map(a=>a.id);
+        ackPending=true;b.disabled=true;
+        try{
+          for(const id of ids)accountData=await api('/api/account/acknowledge?'+new URLSearchParams({id}),{method:'POST',headers:{'X-CSRF-Token':settings.csrf}});
+        }catch(error){notify('提醒暂未保存，请重试');}
+        finally{ackPending=false;renderAccount();}
       }
       if(b.id==='desktopNotifications'){
         if(notificationEnabled()){try{localStorage.setItem(storageKey,'false');}catch(_){}b.textContent='启用桌面通知';return;}

@@ -148,3 +148,17 @@ test('gap connectors only bridge marked outages, never resets, decreases or comp
   assert.equal(range.gaps({...base,samples:[samples[0],{...samples[1],break_before:false}]}).length,0);
   assert.match(range.chart(base,{...q,range:{since:0,until:3600}}),/class="quota-range-gap"/);
 });
+
+test('one hundred thousand observations stay finite at wide, narrow and zoomed scales',t=>{
+  const points=Array.from({length:100000},(_,i)=>({at:begin+i*60,used_percent:(i%10000)/100,break_before:i%10000===0}));
+  const large={...group,samples:points,events:[],idle:[],references:[]},query={...q,range:{since:begin,until:points.at(-1).at}};
+  const started=performance.now();
+  for(const width of [230,800,1800]){
+    for(const view of [query.range,{since:query.range.until-3600,until:query.range.until}]){
+      const html=range.chart(large,query,width,view);
+      assert.doesNotMatch(html,/NaN|Infinity|undefined/);
+      assert.ok(html.length<100000,'rendering must be bounded by screen resolution');
+    }
+  }
+  t.diagnostic('100,000 observations, six scales: '+Math.round(performance.now()-started)+' ms');
+});

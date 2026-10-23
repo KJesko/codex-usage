@@ -1,6 +1,6 @@
 'use strict';
 
-// Shared time-axis interaction for usage and model charts.
+// Shared time-axis interaction for usage, model and cache charts.
 const UsageViewport=(()=>{
   const saved=new Map();
   const clamp=(v,n)=>{
@@ -14,7 +14,7 @@ const UsageViewport=(()=>{
     toolbar.innerHTML='<span data-usage-range></span><div><button class="button small" data-usage-zoom="out" aria-label="缩小时间轴">−</button><button class="button small" data-usage-zoom="in" aria-label="放大时间轴">＋</button><button class="button small" data-usage-zoom="reset">恢复全范围</button></div>';
     host.parentNode.insertBefore(toolbar,host);
     host.classList.add('usage-zoom-host');host.tabIndex=0;
-    host.setAttribute('aria-label','滚轮缩放时间轴，拖动平移；加减键缩放，左右键平移，Home 恢复全范围');
+    host.setAttribute('aria-label','滚轮缩放时间轴，拖动平移；双击或 Home 恢复全范围，加减键缩放，左右键平移');
     const listen=(type,fn,options={})=>host.addEventListener(type,fn,{...options,signal:abort.signal});
     function update(next){
       view=clamp(next,Math.max(1,count));saved.set(key,view);
@@ -55,6 +55,10 @@ const UsageViewport=(()=>{
     listen('pointerup',e=>{if(host.hasPointerCapture(e.pointerId))host.releasePointerCapture(e.pointerId);stop();});
     listen('pointercancel',stop);listen('lostpointercapture',stop);
     listen('click',e=>{if(suppress){e.preventDefault();e.stopImmediatePropagation();suppress=false;}},{capture:true});
+    listen('dblclick',e=>{
+      if(e.button!==0||!point(e))return;
+      e.preventDefault();stop();suppress=false;update({start:0,end:count});
+    },{capture:true});
     listen('keydown',e=>{
       if(e.target!==host)return;
       const span=view.end-view.start;
@@ -70,12 +74,43 @@ const UsageViewport=(()=>{
       if(action==='reset')update({start:0,end:count});else if(action)zoom(action==='in'?1/1.5:1.5);
     },{signal:abort.signal});
     return {
-      slice(rows){const result=rows.slice(Math.floor(view.start),Math.max(Math.floor(view.start)+1,Math.ceil(view.end)));toolbar.querySelector('[data-usage-range]').textContent=result.length?result[0].date+' — '+result.at(-1).date:'';return result;},
+      slice(rows){const result=rows.slice(Math.floor(view.start),Math.max(Math.floor(view.start)+1,Math.ceil(view.end)));toolbar.querySelector('[data-usage-range]').textContent=result.length?(result[0].since||result[0].date)+' — '+(result.at(-1).until||result.at(-1).date):'';return result;},
       refresh(){update(view);},
       release(){abort.abort();toolbar.remove();}
     };
   }
   return {mount,clamp};
+})();
+
+
+// The daily feed is already filtered and dated in the reporting time zone.
+// Group calendar dates in UTC to avoid shifting them to the browser's time zone.
+const ModelTimeline = (() => {
+  const fields=['total','uncached','cached','write','output','known_cost',
+    'input_cost','cached_cost','write_cost','output_cost','unpriced_events'];
+  function group(rows,grain='day') {
+    if(!['day','week','month'].includes(grain))grain='day';
+    const sorted=[...rows].sort((a,b)=>a.date.localeCompare(b.date));
+    if(grain==='day')return sorted.map(row=>({...row,since:row.date,until:row.date}));
+    const periods=new Map();
+    for(const row of sorted) {
+      const date=new Date(row.date+'T12:00:00Z');
+      if(grain==='week')date.setUTCDate(date.getUTCDate()-(date.getUTCDay()+6)%7);
+      else date.setUTCDate(1);
+      const key=date.toISOString().slice(0,10);
+      if(!periods.has(key))periods.set(key,{date:key,since:row.date,until:row.date,models:new Map()});
+      const period=periods.get(key);period.until=row.date;
+      for(const cell of row.models) {
+        if(!period.models.has(cell.name))period.models.set(cell.name,{name:cell.name,...Object.fromEntries(fields.map(key=>[key,0]))});
+        const model=period.models.get(cell.name);
+        for(const field of fields)model[field]+=cell[field]||0;
+      }
+    }
+    return [...periods.values()].map(period=>({...period,models:[...period.models.values()].map(model=>({
+      ...model,cost:model.unpriced_events?null:model.known_cost
+    }))}));
+  }
+  return {group};
 })();
 
 
@@ -91,7 +126,12 @@ const ModelCharts = (() => {
   const zero = {total:0, known_cost:0, cost:0, unpriced_events:0};
   const visible = {stack:true, line:true};
   const chart = {geometry:null, activeDate:null, pinned:false};
-  let metric='tokens', root=null, report=null, available=[], selected=[], days=[],allDays=[],viewport=null;
+  const periods = {
+    day:{title:'模型每日用量',detail:'每日明细'},
+    week:{title:'模型每周用量',detail:'每周明细'},
+    month:{title:'模型每月用量',detail:'每月明细'}
+  };
+  let metric='tokens', grain='day', root=null, report=null, available=[], selected=[], days=[],allDays=[],grouped=[],viewport=null;
   const observer = new ResizeObserver(() => draw());
   const color = name => {
     const known = {'gpt-6-astra':'#da7756', 'gpt-6.1-sol':'#7d9f91', 'gpt-5.6-sol':'#829cc4'};
@@ -104,22 +144,26 @@ const ModelCharts = (() => {
   const byId = id => root.querySelector('#'+id);
   const host = () => byId('modelDailyChart');
   const tooltip = () => byId('modelChartTooltip');
-  const chartName = () => visible.stack && visible.line ? '模型每日用量组合图' : visible.stack ? '用量类别堆叠图' : '模型用量折线图';
+  const chartName = () => visible.stack && visible.line ? periods[grain].title : visible.stack ? '用量类别堆叠图' : '模型用量折线图';
+  const periodRange = row => row.since===row.until?row.since:`${row.since} — ${row.until}`;
 
   function panel() {
+    const grouping=periods[state.grain]||periods.day;
     return `<section class="panel model-explorer" id="modelExplorer" aria-labelledby="modelChartTitle">
-      <div class="panel-head"><div><h2 id="modelChartTitle">模型每日用量</h2><p data-help>堆叠柱展示用量类别，折线叠加各模型趋势。</p></div>
+      <div class="panel-head"><div><h2 id="modelChartTitle">${grouping.title}</h2><p data-help>堆叠柱展示用量类别，折线叠加各模型趋势。按统计时区汇总，周一开始一周，每月从一日开始；首尾周期仅包含筛选范围内的日期，零用量日期也计入。</p></div>
         <div class="model-visibility" role="group" aria-label="显示内容"><span>显示</span><label><input type="checkbox" data-model-visible="stack" checked>堆叠柱</label><label><input type="checkbox" data-model-visible="line" checked>折线</label></div></div>
-      <div class="model-chart-toolbar"><div class="metric-switch" role="group" aria-label="模型图表指标"><button data-model-metric="tokens">Tokens</button><button data-model-metric="cost">API 等价 USD</button></div><span class="subtle">按天统计 · 含零用量日期</span></div>
+      <div class="model-chart-toolbar"><div class="metric-switch" role="group" aria-label="模型图表指标"><button data-model-metric="tokens">Tokens</button><button data-model-metric="cost">API 等价 USD</button></div>${grainSwitch('模型图表统计粒度')}</div>
       <fieldset class="model-picker"><legend>图表显示模型</legend><div class="model-picker-actions"><span id="modelSelectionCount" aria-live="polite"></span><button class="text-button" data-model-selection="all">全选</button><button class="text-button" data-model-selection="none">清空</button></div><div id="modelChoices" class="model-choices"></div></fieldset>
       <div class="model-chart-frame"><div class="model-chart-host" id="modelDailyChart"></div><div id="modelChartTooltip" class="model-chart-tooltip" role="status" aria-live="polite" hidden></div></div>
       <div class="model-combined-legend"><div class="model-legend-row" id="modelCategoryLegend"></div><div class="model-legend-row" id="modelLineLegend"></div></div>
-      <div class="model-chart-footer"><p id="modelChartHelp">滚轮缩放、拖动平移，恢复全范围查看当前筛选的全部日期。悬停查看明细，点击固定；← → 切换日期，Esc 收起。</p><p id="modelPricingNote" hidden>API 等价仅绘制已定价部分，待定价用量不视为零成本。</p><p id="modelSingleDay" hidden>当前范围只有一天，折线显示单个数据点。<button class="text-button" data-range-jump="all">查看起点以来 →</button></p></div>
+      <div class="model-chart-footer"><p id="modelChartHelp">滚轮缩放、拖动平移，恢复全范围查看当前筛选的全部日期。悬停查看明细，点击固定；← → 切换统计周期，Esc 收起。</p><p id="modelPricingNote" hidden>API 等价仅绘制已定价部分，待定价用量不视为零成本。</p><p id="modelSingleDay" hidden>当前范围仅含一个统计周期，折线显示单个数据点。<button class="text-button" data-range-jump="all">查看起点以来 →</button></p></div>
     </section>`;
   }
 
   function mount(element, nextReport) {
     root=element; report=nextReport; available=report.models.map(m=>m.name);
+    grain=periods[report.range.grain]?report.range.grain:'day';
+    grouped=ModelTimeline.group(report.model_timeline,grain);
     byId('modelChoices').innerHTML=available.map(name=>`<label class="model-choice" style="--model-color:${color(name)}"><input type="checkbox" data-chart-model="${esc(name)}" ${hidden.has(name)?'':'checked'}><i aria-hidden="true"></i><span>${esc(name)}</span></label>`).join('') || '<span class="subtle">当前范围没有模型用量</span>';
     root.addEventListener('change', e => {
       if (e.target.matches('[data-model-visible]')) {
@@ -147,7 +191,7 @@ const ModelCharts = (() => {
     });
     const el=host();
     viewport?.release();
-    viewport=UsageViewport.mount(el,JSON.stringify(['models',report.range,typeof state==='undefined'?null:[state.source,state.project,state.model,state.account]]),report.model_timeline.length,()=>{chart.pinned=false;draw();},()=>chart.geometry);
+    viewport=UsageViewport.mount(el,JSON.stringify(['models',report.range,typeof state==='undefined'?null:[state.source,state.project,state.model,state.account]]),grouped.length,()=>{chart.pinned=false;draw();},()=>chart.geometry);
       el.addEventListener('pointermove', e => {
         if (chart.pinned) return;
         const index=pointerIndex(e);
@@ -182,10 +226,10 @@ const ModelCharts = (() => {
 
   function update() {
     selected=available.filter(name=>!hidden.has(name));
-    allDays=report.model_timeline.map(day=>{
+    allDays=grouped.map(day=>{
       const cells=new Map(day.models.map(m=>[m.name,m]));
       const chosen=selected.map(name=>cells.get(name) || zero);
-      return {date:day.date,cells:chosen,categories:categories.map(category=>({
+      return {date:day.date,since:day.since,until:day.until,cells:chosen,categories:categories.map(category=>({
         ...category,
         total:chosen.reduce((sum,c)=>sum+(c[category.key]||0),0),
         known_cost:chosen.reduce((sum,c)=>sum+(c[category.cost]||0),0),
@@ -227,7 +271,7 @@ const ModelCharts = (() => {
     if (unknownOnly) { el.innerHTML='<div class="empty"><h3>所选模型尚未定价</h3>切换到 Tokens 查看用量，或在“价格与计费”中补充单价。</div>';return; }
     const totals=days.map(d=>d.categories.reduce((sum,c)=>sum+value(c),0));
     // Both layers share the same dates, coordinates, and vertical scale.
-    const peak=Math.max(visible.stack?Math.max(...totals):0,visible.line?Math.max(...days.map(d=>Math.max(...d.cells.map(value)))):0);
+    const peak=Math.max(visible.stack?totals.reduce((max,n)=>Math.max(max,n),0):0,visible.line?days.reduce((max,d)=>d.cells.reduce((m,cell)=>Math.max(m,value(cell)),max),0):0);
     const max=peak?peak*1.15:1;
     const ticks=Array.from({length:5},(_,i)=>metric==='cost'?usd(max*i/4):compact(max*i/4));
     const L=Math.max(70,...ticks.map(t=>t.length*8.4+14)),R=36,T=20,B=42,w=Math.max(1,W-L-R),h=H-T-B,step=w/days.length;
@@ -236,7 +280,10 @@ const ModelCharts = (() => {
     let svg=`<svg class="chart model-daily-svg" viewBox="0 0 ${W} ${H}" role="group" aria-label="${chartName()}">`;
     ticks.forEach((tick,i)=>{const yy=y(max*i/4);svg+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}"/><text x="${L-12}" y="${yy+5}" text-anchor="end">${esc(tick)}</text>`;});
     const labelStep=Math.max(1,Math.ceil(days.length/Math.max(1,Math.floor(w/85)+1)));
-    days.forEach((d,i)=>{if(i%labelStep===0)svg+=`<text x="${Math.max(36,Math.min(W-36,x(i)))}" y="${H-10}" text-anchor="middle">${d.date.slice(days[0].date.slice(0,4)===days.at(-1).date.slice(0,4)?5:2).replaceAll('-','/')}</text>`;});
+    days.forEach((d,i)=>{
+      const label=grain==='month'?d.date.slice(0,7).replace('-','/'):d.date.slice(days[0].date.slice(0,4)===days.at(-1).date.slice(0,4)?5:2).replaceAll('-','/');
+      if(i%labelStep===0)svg+=`<text x="${Math.max(36,Math.min(W-36,x(i)))}" y="${H-10}" text-anchor="middle">${label}</text>`;
+    });
     if (visible.stack) {
       svg+='<g class="model-stack-layer">';
       const bar=Math.max(.5,Math.min(28,step*.64));
@@ -259,7 +306,7 @@ const ModelCharts = (() => {
       });
       svg+='</g>';
     }
-    svg+=`<line class="model-crosshair" x1="0" x2="0" y1="${T}" y2="${T+h}" hidden/><rect class="model-hit-area" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent" tabindex="0" role="slider" aria-label="查看模型每日用量明细" aria-orientation="horizontal" aria-valuemin="1" aria-valuemax="${days.length}" aria-valuenow="1" aria-valuetext="${days[0].date}" aria-describedby="modelChartHelp"/></svg>`;
+    svg+=`<line class="model-crosshair" x1="0" x2="0" y1="${T}" y2="${T+h}" hidden/><rect class="model-hit-area" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent" tabindex="0" role="slider" aria-label="查看模型用量明细" aria-orientation="horizontal" aria-valuemin="1" aria-valuemax="${days.length}" aria-valuenow="1" aria-valuetext="${periodRange(days[0])}" aria-describedby="modelChartHelp"/></svg>`;
     const focused=el.contains(document.activeElement) && document.activeElement.matches('.model-hit-area');
     el.innerHTML=svg;
     if(focused)el.querySelector('.model-hit-area').focus({preventScroll:true});
@@ -288,7 +335,7 @@ const ModelCharts = (() => {
     const categoryRows=day.categories.map(c=>({name:c.label,color:colors[c.key],tokens:c.total,cost:usd(c.known_cost)+(c.unpriced?' + 待定价':'')}));
     const modelRows=day.cells.map((c,j)=>({name:selected[j],color:color(selected[j]),tokens:c.total,cost:costLabel(c)}));
     const section=(label,rows)=>`<tr class="model-tooltip-section"><th colspan="3">${label}</th></tr>`+rows.map(row=>`<tr><td><i class="dot" style="background:${row.color}"></i>${esc(row.name)}</td><td>${number(row.tokens)}</td><td>${row.cost}</td></tr>`).join('');
-    tip.innerHTML=`<div class="model-tooltip-heading"><strong>${day.date}</strong><span>${chart.pinned?'已固定':'每日明细'}</span>${chart.pinned?'<button class="icon-button" data-model-dismiss aria-label="收起每日明细">×</button>':''}</div><table><thead><tr><th>明细</th><th>Tokens</th><th>API 等价</th></tr></thead><tbody>${visible.stack?section('按用量类别',categoryRows):''}${visible.line?section('按模型',modelRows):''}</tbody><tfoot><tr><th>所选合计</th><td>${number(total)}</td><td>${usd(known)}${unknown?' + 待定价':''}</td></tr></tfoot></table>`;
+    tip.innerHTML=`<div class="model-tooltip-heading"><strong>${periodRange(day)}</strong><span>${chart.pinned?'已固定':periods[grain].detail}</span>${chart.pinned?'<button class="icon-button" data-model-dismiss aria-label="收起用量明细">×</button>':''}</div><table><thead><tr><th>明细</th><th>Tokens</th><th>API 等价</th></tr></thead><tbody>${visible.stack?section('按用量类别',categoryRows):''}${visible.line?section('按模型',modelRows):''}</tbody><tfoot><tr><th>所选合计</th><td>${number(total)}</td><td>${usd(known)}${unknown?' + 待定价':''}</td></tr></tfoot></table>`;
     tip.hidden=false;
     const frame=root.querySelector('.model-chart-frame'),px=host().offsetLeft+x;
     tip.style.left=Math.max(12,Math.min(frame.clientWidth-tip.offsetWidth-12,px+18))+'px';
@@ -296,7 +343,7 @@ const ModelCharts = (() => {
     line.removeAttribute('hidden');line.setAttribute('x1',x);line.setAttribute('x2',x);
     const slider=root.querySelector('.model-hit-area');
     slider.setAttribute('aria-valuenow',index+1);
-    slider.setAttribute('aria-valuetext',`${day.date}，所选模型合计 ${number(total)} tokens`);
+    slider.setAttribute('aria-valuetext',`${periodRange(day)}，所选模型合计 ${number(total)} tokens`);
   }
   function resetPins() { chart.pinned=false; }
   function release() {

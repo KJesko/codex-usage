@@ -443,6 +443,9 @@ class UsageTest(unittest.TestCase):
     def test_settings_reject_nonfinite_negative_and_bad_paths(self):
         valid={'timezone':'UTC','sources':[str(self.root)],'prices':{'custom':dict(input=1,cached=.1,write=1.25,output=5)}}
         self.assertEqual(validate_settings(valid)['timezone'],'UTC')
+        self.assertEqual(validate_settings(valid)['timezone_mode'], 'manual')
+        self.assertEqual(validate_settings({**valid, 'timezone_mode': 'system'})['timezone_mode'], 'system')
+        with self.assertRaises(ValueError): validate_settings({**valid, 'timezone_mode': 'invalid'})
         self.assertEqual(validate_settings(valid)['usage_since'], '')
         for bad in [None, True, 123, '2026-02-30', '20261014', '2026-10-14T00:00:00Z']:
             with self.assertRaises(ValueError): validate_settings({**valid, 'usage_since': bad})

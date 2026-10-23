@@ -14,7 +14,7 @@ function dashboard() {
       matches(){return false;}});
     return nodes.get(id);
   }
-  const context=vm.createContext({URLSearchParams,AbortController,Intl,Date,
+  const context=vm.createContext({URL,URLSearchParams,AbortController,Intl,Date,
     location:{search:'?view=models&range=today&project=selected-project'},
     document:{getElementById:node,querySelectorAll:()=>[],body:{classList:{toggle(){}}},
       addEventListener(type,callback){(listeners[type]??=[]).push(callback);}},
@@ -24,6 +24,8 @@ function dashboard() {
     CompactTables:{mount(){}},
     fetch:(url,options)=>new Promise((resolve,reject)=>pending.push({url,options,resolve,reject})),
     released});
+  vm.runInContext(fs.readFileSync(require.resolve('../src/codex_usage/static/web-state.js'),'utf8'),context);
+  vm.runInContext(fs.readFileSync(require.resolve('../src/codex_usage/static/web-feedback.js'),'utf8'),context);
   const source=fs.readFileSync(require.resolve('../src/codex_usage/static/app.js'),'utf8');
   vm.runInContext(source.replace(/^init\(\);\r?$/m,''),context);
   vm.runInContext(`
@@ -36,7 +38,7 @@ function dashboard() {
     sessions:[{title,id:title,project_names:[]}],range:{since:'2026-10-14',until:'2026-10-16'},
     summary:{total:1,known_cost:1,cache_rate:0,events:1},models:[],timeline:[]})});
   return {context,node,pending,released,finish,
-    click:button=>listeners.click[0]({target:{closest:()=>button}})};
+    click:button=>listeners.click[2]({target:{closest:()=>button}})};
 }
 
 test('model range shortcut applies outside the filter popover without clearing dimensions',async()=>{
@@ -146,4 +148,59 @@ test('shared chart viewport clamps panning and supports exactly one bucket at ma
   assert.deepEqual({...clamp({start:9,end:12},10)},{start:7,end:10});
   assert.deepEqual({...clamp({start:2.7,end:3},10)},{start:3,end:4});
   assert.deepEqual({...clamp({start:-5,end:20},10)},{start:0,end:10});
+});
+
+test('overlapping status polls share one request and recover after a failed read',async()=>{
+  const app=dashboard();vm.runInContext("settings={timezone:'UTC'};",app.context);
+  const first=app.context.refreshDataStatus();
+  for(let i=0;i<1000;i++)app.context.refreshDataStatus();
+  assert.equal(app.pending.length,1);
+  app.pending[0].reject(new Error('offline'));await first;
+  assert.equal(vm.runInContext('statusReading',app.context),false);
+  assert.equal(vm.runInContext('statusError',app.context),'offline');
+  const next=app.context.refreshDataStatus();app.pending[1].resolve({ok:true,json:async()=>({local:{running:true},remotes:[],prices:{}})});await next;
+  assert.equal(vm.runInContext('statusError',app.context),'');
+});
+
+test('remote polls never overlap, back off after failure and can be retried',async()=>{
+  const app=dashboard();vm.runInContext("renderRemoteStatus=()=>{};state.view='settings';",app.context);
+  const first=app.context.pollRemotes();for(let i=0;i<1000;i++)app.context.pollRemotes();assert.equal(app.pending.length,1);
+  app.pending[0].reject(new Error('offline'));await first;
+  assert.ok(vm.runInContext('remotePollAt>Date.now()+5000',app.context));assert.equal(vm.runInContext('remoteReading',app.context),false);
+  const next=app.context.pollRemotes();app.pending[1].resolve({ok:true,json:async()=>[]});await next;
+  assert.equal(vm.runInContext('remoteFailures',app.context),0);
+});
+
+test('settings writes queue independent patches and never send full stale settings',async()=>{
+  const app=dashboard();vm.runInContext("settings={csrf:'token',timezone:'UTC',avatar_initials:'CU'};",app.context);
+  const first=app.context.persistSettingsPatch({avatar_initials:'AB'}),second=app.context.persistSettingsPatch({timezone:'Asia/Shanghai'});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(app.pending.length,1);assert.equal(app.pending[0].url,'/api/settings/patch');
+  assert.deepEqual(JSON.parse(app.pending[0].options.body),{avatar_initials:'AB'});
+  app.pending[0].resolve({ok:true,json:async()=>({csrf:'token',avatar_initials:'AB',timezone:'UTC'})});await first;await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(JSON.parse(app.pending[1].options.body),{timezone:'Asia/Shanghai'});
+  app.pending[1].resolve({ok:true,json:async()=>({csrf:'token',avatar_initials:'AB',timezone:'Asia/Shanghai'})});await second;
+  assert.equal(vm.runInContext('settings.avatar_initials',app.context),'AB');
+});
+
+test('login keeps polling in a background page and navigates the reserved tab',async()=>{
+  const app=dashboard();
+  vm.runInContext(`
+    document.hidden=true;
+    document.getElementById=()=>null;
+    this.timer=null;this.destination=null;this.reads=0;
+    setTimeout=callback=>{this.timer=callback;};
+    loginWindow={closed:false,location:{replace:url=>{this.destination=url;}}};
+    accountData={browser_login:{status:'starting'}};
+    renderAccount=paintBrowserLogin;
+    sessionFetch=async()=>({ok:true,json:async()=>({browser_login:++this.reads===1
+      ? {status:'starting'} : {status:'waiting',url:'https://auth.openai.com/authorize?test=1'}})});
+  `,app.context);
+  await app.context.refreshAccount();
+  app.context.timer();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(app.context.reads,2);
+  assert.equal(app.context.destination,'https://auth.openai.com/authorize?test=1');
+  vm.runInContext(`accountData={browser_login:{status:'success'}};`,app.context);
+  app.context.timer();
+  assert.equal(app.context.reads,2,'ordinary polling pauses again when hidden after login');
 });

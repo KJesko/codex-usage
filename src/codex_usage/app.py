@@ -73,6 +73,9 @@ class KeyedCache:
 def validate_settings(value):
     if not isinstance(value, dict):
         raise ValueError("设置必须是对象")
+    timezone_mode = value.get("timezone_mode", "manual")
+    if timezone_mode not in ("system", "manual"):
+        raise ValueError("时区模式无效")
     zone = value.get("timezone", "America/Los_Angeles")
     try:
         ZoneInfo(zone)
@@ -120,7 +123,7 @@ def validate_settings(value):
             or not math.isfinite(threshold) or not 1 <= threshold <= 99):
         raise ValueError('提醒阈值请填写 1 至 99 的百分比')
     alerts = {key: alerts[key] for key in DEFAULT_ALERTS}
-    return {"timezone": zone, "usage_since": usage_since, "avatar_initials": avatar_initials.upper(), 'quota_alerts': alerts,
+    return {"timezone_mode": timezone_mode, "timezone": zone, "usage_since": usage_since, "avatar_initials": avatar_initials.upper(), 'quota_alerts': alerts,
             "sources": list(dict.fromkeys(roots)), "prices": prices,
             "remotes": validate_remotes(value.get('remotes', []))}
 
@@ -132,18 +135,22 @@ class Application:
         self.config_path = self.data_dir / "settings.json"
         saved = json.loads(self.config_path.read_text(encoding="utf-8")) if self.config_path.exists() else {}
         saved.setdefault("sources", [os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")])
+        saved.setdefault("timezone_mode", "manual" if saved.get("timezone") or timezone_name or os.environ.get("CODEX_USAGE_TIMEZONE") else "system")
         saved.setdefault("timezone", os.environ.get("CODEX_USAGE_TIMEZONE") or "America/Los_Angeles")
         if roots:
             saved["sources"] = [str(Path(p).expanduser().resolve()) for p in roots]
         if timezone_name:
+            saved["timezone_mode"] = "manual"
             saved["timezone"] = timezone_name
         self.config = validate_settings(saved)
         self.cache = KeyedCache()
         self.remote_sync = RemoteSync(self.data_dir / 'remote', self.cache.clear)
         self.account_quota = AccountQuota(history_path=self.data_dir / 'quota-history.sqlite',
                                           timezone_name=self.config['timezone'])
+        self.account_logout_path = self.data_dir / 'account-signed-out'
+        self.account_quota.set_signed_out(self.account_logout_path.exists())
         self.browser_login = BrowserLogin(self.login_completed)
-        self.account_profile = AccountProfile()
+        self.account_profile = AccountProfile(path=self.data_dir / 'account-profile.json')
         self.price_sync = PriceSync(self.data_dir / 'official-prices.json', needed=self.missing_prices,
                                     used=self.used_models)
         self.reset_forecast = ResetForecast(self.data_dir / 'reset-forecast.json')
@@ -158,12 +165,27 @@ class Application:
         self.account_quota.configure(self.config['timezone'], self.config['quota_alerts'])
 
     def login_completed(self):
-        self.account_profile.invalidate()
+        with self.lock:
+            if self.browser_login.stop.is_set():
+                return
+            self.account_logout_path.unlink(missing_ok=True)
+            self.account_quota.set_signed_out(False)
+            self.account_profile.invalidate()
+            self.account_profile.from_local_login()
         connection = self.account_quota.connection
-        if connection:
-            with connection.lock:
-                connection._disconnect()
-        self.account_quota.request(force=True)
+        def reconnect():
+            if connection:
+                with connection.lock:
+                    connection._disconnect()
+            self.account_quota.request(force=True)
+        threading.Thread(target=reconnect, daemon=True).start()
+
+    def logout_account(self):
+        self.browser_login.cancel()
+        with self.lock:
+            self.account_logout_path.write_text('signed out\n', encoding='utf-8')
+            self.account_quota.set_signed_out(True)
+            self.account_profile.invalidate()
 
     def start_collecting(self, scan_interval=30):
         if self.collector_thread is not None:
@@ -211,13 +233,24 @@ class Application:
         self.price_sync.close()
 
     def account_status(self):
-        return {**self.account_quota.status(), 'usage_collector': self.collection_status(),
-                'browser_login':self.browser_login.status(), 'profile':self.account_profile.status()}
+        quota = self.account_quota.status()
+        with self.account_quota.lock:
+            identity = self.account_quota.identity
+        if quota.get('signed_out') or quota.get('problem',{} ) and quota['problem'].get('kind')=='signed_out':
+            self.account_profile.bind(None)
+        elif identity:
+            self.account_profile.bind(identity)
+        return {**quota, 'usage_collector': self.collection_status(),
+                'browser_login':self.browser_login.status(), 'profile':self.account_profile.status(
+                    start=bool(identity and not quota['busy'] and not quota['stale'])),
+                'profile_status':self.account_profile.diagnostics()}
 
     def data(self, query):
         with self.lock:
             self.remote_sync.request(self.config['remotes'])
             snapshot = self.cache.get("snapshot", self.index.snapshot, force=query.get("refresh") == "1")
+            if query.get("refresh") == "1":
+                self.collection.update(last_scan=datetime.now(timezone.utc).isoformat(), problem=None)
             result = report(snapshot, query, {**self.config, "_catalog":self.price_sync.catalog()})
             result["pricing"]["sync"] = self.price_sync.status()
             catalog = self.price_sync.catalog()
@@ -232,14 +265,32 @@ class Application:
     def save(self, value):
         validated = validate_settings(value)
         with self.lock:
+            previous = self.config
             temp = self.config_path.with_suffix(".tmp")
             temp.write_text(json.dumps(validated, ensure_ascii=False, indent=2), encoding="utf-8")
             temp.replace(self.config_path)
             self.config = validated
             self.account_quota.configure(self.config['timezone'], self.config['quota_alerts'])
-            self.index = UsageIndex(self.config["sources"], self.data_dir / "usage.sqlite",
-                                    self.config['remotes'], self.remote_sync.directory)
-            self.cache.clear()
+            if any(previous[key] != validated[key] for key in ('sources', 'remotes')):
+                self.index = UsageIndex(self.config["sources"], self.data_dir / "usage.sqlite",
+                                        self.config['remotes'], self.remote_sync.directory)
+            if any(previous[key] != validated[key] for key in ('sources', 'remotes', 'timezone', 'usage_since', 'prices')):
+                self.cache.clear()
+
+    def patch_settings(self, patch):
+        # Merge under the same lock as the write: independent browser edits cannot
+        # replace unrelated settings with an older full-form snapshot.
+        if not isinstance(patch, dict) or not patch or set(patch) - self.config.keys():
+            raise ValueError('设置项无效')
+        with self.lock:
+            self.save({**self.config, **patch})
+            return dict(self.config)
+
+    def update_status(self):
+        # Cached status only. Opening this panel must not scan logs or contact SSH.
+        return {'local': self.collection_status(),
+                'remotes': self.remote_sync.statuses(self.config['remotes']),
+                'prices': self.price_sync.status()}
 
     def sync_remotes(self):
         with self.lock:
@@ -316,6 +367,9 @@ def make_server(app, port=8787):
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
                       "/language.js": ("language.js", "text/javascript; charset=utf-8"),
                       "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                      "/web-state.js": ("web-state.js", "text/javascript; charset=utf-8"),
+                      "/web-feedback.js": ("web-feedback.js", "text/javascript; charset=utf-8"),
+                      "/themed-select.js": ("themed-select.js", "text/javascript; charset=utf-8"),
                       "/model-charts.js": ("model-charts.js", "text/javascript; charset=utf-8"),
                       "/activity-heatmap.js": ("activity-heatmap.js", "text/javascript; charset=utf-8"),
                       "/project-treemap.js": ("project-treemap.js", "text/javascript; charset=utf-8"),
@@ -347,6 +401,8 @@ def make_server(app, port=8787):
                     self.send(200, {**app.config, "csrf": app.csrf,
                                    'setup': setup_status(app.config['sources'], app.data_dir, self.server.server_port,
                                                          not app.config_path.exists())})
+                elif parsed.path == '/api/status':
+                    self.send(200, app.update_status())
                 elif parsed.path == '/api/account':
                     app.account_quota.request()
                     self.send(200, app.account_status())
@@ -379,6 +435,10 @@ def make_server(app, port=8787):
             if (not self.allowed() or (origin and origin not in allowed_origins)
                     or not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), app.csrf)):
                 self.send(403, {"error": "请从本机页面保存设置"})
+                return
+            if self.path == '/api/account/logout':
+                app.logout_account()
+                self.send(200, app.account_status())
                 return
             if self.path in ('/api/account/login', '/api/account/login/cancel'):
                 if self.path.endswith('/cancel'):
@@ -447,7 +507,7 @@ def make_server(app, port=8787):
                 self.send(202, {'ok': True, 'remotes': app.sync_remotes()})
                 return
             if self.path == '/api/account/refresh':
-                app.account_profile.invalidate()
+                app.account_profile.retry()
                 app.account_quota.request(force=True)
                 self.send(202, app.account_status())
                 return
@@ -459,15 +519,20 @@ def make_server(app, port=8787):
                 except (OSError, sqlite3.Error):
                     self.send(500, {'error': '提醒暂时无法保存，请稍后重试'})
                 return
-            if self.path != "/api/settings":
+            if self.path not in ("/api/settings", "/api/settings/patch"):
                 self.send(404, {"error": "页面不存在"})
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 if size < 1 or size > 65536:
                     raise ValueError("设置内容大小无效")
-                app.save(json.loads(self.rfile.read(size)))
-                self.send(200, {"ok": True})
+                value = json.loads(self.rfile.read(size))
+                if self.path.endswith('/patch'):
+                    config = app.patch_settings(value)
+                    self.send(200, {**config, 'csrf': app.csrf})
+                else:
+                    app.save(value)
+                    self.send(200, {"ok": True})
             except (ValueError, TypeError) as exc:
                 self.send(400, {"error": str(exc)})
             except (OSError, sqlite3.Error) as exc:

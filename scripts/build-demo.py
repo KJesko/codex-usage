@@ -24,7 +24,8 @@ def build():
     # An explicit allowlist prevents accidentally publishing unrelated assets.
     assets = ['index.html', 'language.js', 'style.css', 'icon.svg', 'app.js', 'model-charts.js',
               'activity-heatmap.js', 'project-treemap.js', 'quota-dom.js', 'quota-range.js',
-              'usage-insights.js', 'quota-tools.js', 'quota-page.js', 'compact-tables.js', 'hint-help.js']
+              'usage-insights.js', 'quota-tools.js', 'quota-page.js', 'compact-tables.js', 'hint-help.js',
+              'web-state.js', 'web-feedback.js', 'themed-select.js']
     for name in assets:
         shutil.copyfile(STATIC / name, OUTPUT / name)
     for name in ['demo-data.js', 'demo-bridge.js', 'demo.css']:

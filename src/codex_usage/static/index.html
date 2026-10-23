@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="light dark"><title>Codex Usage · 用量看板</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
   <script src="/language.js" defer></script>
-  <script src="/model-charts.js" defer></script><script src="/activity-heatmap.js" defer></script><script src="/project-treemap.js" defer></script><script src="/quota-dom.js" defer></script><script src="/quota-range.js" defer></script><script src="/usage-insights.js" defer></script><script src="/quota-tools.js" defer></script><script src="/quota-page.js" defer></script><script src="/compact-tables.js" defer></script><script src="/app.js" defer></script>
+  <script src="/model-charts.js" defer></script><script src="/activity-heatmap.js" defer></script><script src="/project-treemap.js" defer></script><script src="/quota-dom.js" defer></script><script src="/quota-range.js" defer></script><script src="/usage-insights.js" defer></script><script src="/quota-tools.js" defer></script><script src="/quota-page.js" defer></script><script src="/compact-tables.js" defer></script><script src="/web-state.js" defer></script><script src="/web-feedback.js" defer></script><script src="/themed-select.js" defer></script><script src="/app.js" defer></script>
   <script src="/hint-help.js" defer></script>
 </head>
 <body>
@@ -26,16 +26,15 @@
   </nav>
   <div class="sidebar-bottom">
     <div class="profile-area">
-      <button id="profileButton" class="sidebar-account" popovertarget="accountQuota" aria-label="查看账号额度" aria-controls="accountQuota" aria-expanded="false"><span id="accountAvatar" class="account-avatar" aria-hidden="true">CU</span><span class="profile-copy"><strong id="sidebarAccount">Codex 账号</strong><span id="sidebarPlan">正在连接</span></span><svg class="profile-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="m5 6 3-3 3 3m-6 4 3 3 3-3"/></svg></button>
+      <button id="profileButton" class="sidebar-account" popovertarget="accountQuota" aria-label="查看账号额度" aria-controls="accountQuota" aria-expanded="false"><span id="accountAvatar" class="account-avatar account-avatar-default" aria-hidden="true"></span><span class="profile-copy"><strong id="sidebarAccount">Codex 账号</strong><span id="sidebarPlan">正在连接</span></span><svg class="profile-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="m5 6 3-3 3 3m-6 4 3 3 3-3"/></svg></button>
       <div id="accountStatus" class="profile-status"><span class="account-state"><i></i>正在连接</span></div>
     </div>
     <section id="accountQuota" class="account-quota" popover="auto" aria-labelledby="accountQuotaTitle"><div class="account-heading"><h2 id="accountQuotaTitle">账号额度</h2><span class="subtle">正在连接…</span></div></section>
-    <button class="theme-button" id="theme" aria-label="切换深浅主题"><span data-icon="sun"></span><span>切换深浅主题</span></button>
     <div class="version">Codex Usage <span>网页预览</span></div>
   </div>
 </aside>
 <div class="workspace">
-  <header class="topbar"><div class="breadcrumbs"><span class="crumb">Codex Usage</span><span class="slash">/</span><span id="breadcrumb">用量总览 / 概览</span></div><div class="top-actions"><select id="language" class="language-select" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select><button id="filterButton" class="filter-trigger" popovertarget="filterPopover" aria-controls="filterPopover" aria-expanded="false" aria-label="展开筛选设置"><span data-icon="filter"></span><span id="filterSummary">正在读取筛选条件</span><span class="filter-chevron" aria-hidden="true">⌄</span></button><button class="button small" id="alertsButton" popovertarget="alertsPopover" aria-controls="alertsPopover" aria-expanded="false">提醒</button><button class="icon-button" id="refresh" aria-label="刷新数据" title="刷新用量和账号额度"><span data-icon="refresh"></span></button></div></header>
+  <header class="topbar"><div class="breadcrumbs"><span class="crumb">Codex Usage</span><span class="slash">/</span><span id="breadcrumb">用量总览 / 概览</span></div><div class="top-actions"><select id="language" class="language-select" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select><button id="filterButton" class="filter-trigger" popovertarget="filterPopover" aria-controls="filterPopover" aria-expanded="false" aria-label="展开筛选设置"><span data-icon="filter"></span><span id="filterSummary">正在读取筛选条件</span><span class="filter-chevron" aria-hidden="true">⌄</span></button><button class="icon-button alerts-trigger" id="alertsButton" popovertarget="alertsPopover" aria-controls="alertsPopover" aria-expanded="false" aria-label="额度提醒"><span data-icon="bell"></span></button><button class="icon-button" id="refresh" aria-label="刷新数据" title="刷新用量和账号额度"><span data-icon="refresh"></span></button></div></header>
   <section id="filterPopover" class="filter-popover" popover="auto" aria-labelledby="filterTitle">
     <div class="filter-heading"><h2 id="filterTitle">筛选设置</h2><button class="icon-button" popovertarget="filterPopover" popovertargetaction="hide" aria-label="关闭筛选设置">×</button></div>
     <form id="filters">
@@ -59,6 +58,12 @@
     <footer><span id="updated">等待首次读取</span><span data-help="后台采集">后台日志采集 30 秒 · 账号额度采集 60 秒</span></footer>
   </main>
 </div>
+<dialog id="logoutDialog" aria-labelledby="logoutTitle" aria-describedby="logoutDescription">
+  <div class="dialog-top"><h2 id="logoutTitle">确认退出登录？</h2><button class="icon-button" data-cancel-logout aria-label="关闭">×</button></div>
+  <div id="logoutDescription"><p>退出后将停止账号额度采集，并隐藏额度、重置卡和账号信息。重新登录后可继续查看。</p><p>本地项目和会话日志仍可使用，已保存的数据不会删除，也不会退出 Codex 客户端。</p></div>
+  <p id="logoutError" role="alert"></p>
+  <div class="logout-dialog-actions"><button class="button" data-cancel-logout autofocus>取消</button><button class="button primary" data-confirm-logout>确认退出</button></div>
+</dialog>
 <dialog id="sessionDialog" aria-labelledby="sessionTitle"><div class="dialog-top"><span class="subtle">会话详情</span><button class="icon-button" id="closeDialog" aria-label="关闭会话详情">×</button></div><div id="sessionDetail"></div></dialog>
 <dialog id="projectDialog" aria-labelledby="projectTitle"><div class="dialog-top"><span class="subtle">项目详情</span><button class="icon-button" id="closeProjectDialog" aria-label="关闭项目详情">×</button></div><div id="projectDetail"></div></dialog>
 <div id="toast" class="toast" role="status" hidden></div>

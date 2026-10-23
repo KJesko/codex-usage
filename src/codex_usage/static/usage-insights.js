@@ -12,9 +12,9 @@ const UsageInsights=(()=>{
   const resizeObserver=typeof ResizeObserver==='undefined'?null:new ResizeObserver(entries=>{
     for(const {target,contentRect} of entries)resizeChart(target,contentRect.width);
   });
-  function resizeChart(host,width) {
+  function resizeChart(host,width,force=false) {
     const entry=renderers.get(host);
-    if(!entry || width<=0 || Math.abs(width-entry.width)<.5)return;
+    if(!entry || width<=0 || (!force && Math.abs(width-entry.width)<.5))return;
     entry.width=width;
     const focused=host.contains(document.activeElement)?document.activeElement.getAttribute('aria-label'):null;
     const html=entry.draw(width);
@@ -22,23 +22,29 @@ const UsageInsights=(()=>{
     host.innerHTML=html;entry.html=html;
     if(focused)[...host.querySelectorAll('[tabindex]')].find(el=>el.getAttribute('aria-label')===focused)?.focus({preventScroll:true});
   }
-  function observeChart(host,draw) {
+  function observeChart(host,draw,viewport=null) {
     if(!host)return;
     const previous=renderers.get(host);
-    renderers.set(host,{draw,width:0,html:previous?.html});
+    previous?.viewport?.release();
+    renderers.set(host,{draw,viewport,width:0,html:previous?.html});
     resizeChart(host,host.clientWidth);resizeObserver?.observe(host);
   }
   function release(root) {
     if(typeof QuotaRange!=='undefined')QuotaRange.release(root);
-    for(const host of renderers.keys())if(root.contains(host)){resizeObserver?.unobserve(host);renderers.delete(host);}
+    for(const [host,entry] of renderers)if(root.contains(host)){entry.viewport?.release();resizeObserver?.unobserve(host);renderers.delete(host);}
   }
   const dailyCache=report=>report.model_timeline.map(row=>({date:row.date,input:row.models.reduce((sum,m)=>sum+m.input,0),cached:row.models.reduce((sum,m)=>sum+m.cached,0)}));
   function mountCache(root,report) {
+    const host=root.querySelector('.cache-trend-chart');if(!host)return;
     const daily=dailyCache(report);
-    observeChart(root.querySelector('.cache-trend-chart'),width=>cacheTrend(daily,width));
+    // Totals can change during polling without changing this chart's viewport.
+    const key=JSON.stringify(['cache',state.view,report.range.since,report.range.until,report.timezone,state.source,state.project,state.model,state.account]);
+    const viewport=UsageViewport.mount(host,key,daily.length,()=>resizeChart(host,host.clientWidth,true),()=>cacheGeometry(host.clientWidth));
+    observeChart(host,width=>cacheTrend(viewport.slice(daily),width),viewport);
+    viewport.refresh();
   }
   function mountPace(root,quota) {
-    for(const host of renderers.keys())if(!host.isConnected){resizeObserver?.unobserve(host);renderers.delete(host);}
+    for(const [host,entry] of renderers)if(!host.isConnected){entry.viewport?.release();resizeObserver?.unobserve(host);renderers.delete(host);}
     QuotaRange.releaseDetached();
     if(quota?.custom_range){
       for(const host of root.querySelectorAll('[data-range-chart]')){
@@ -106,10 +112,11 @@ const UsageInsights=(()=>{
       return `<g tabindex="0" role="img" aria-label="${esc(b.name+' '+(b.source_name||'')+'：'+(b.kind==='total'?format(b.value,metric):signed(b.value,metric)))}"><title>${esc(b.name)}${b.source_name?' · '+esc(b.source_name):''}\n${b.kind==='total'?format(b.value,metric):signed(b.value,metric)}</title><rect x="${x+(step-w)/2}" y="${y(b.top)}" width="${w}" height="${Math.max(.8,y(b.bottom)-y(b.top))}" rx="3" fill="var(--waterfall-${b.kind})"/><text x="${x+step/2}" y="${y(b.top)-9}" text-anchor="middle" class="chart-number">${textValue(b)}</text><text x="${x+step/2}" y="212" text-anchor="middle">${esc(label)}</text>${b.source_name?`<text x="${x+step/2}" y="233" text-anchor="middle" class="waterfall-source">${esc(fitLabel(b.source_name,step-8))}</text>`:''}</g>`;
     }).join('')}</svg>`;
   }
+  function cacheGeometry(width) { return {L:46,w:Math.max(1,width-66),T:15,h:101}; }
   function cacheTrend(daily,w=560) {
-    const h=148,left=46,right=20,top=15,bottom=116;
+    const g=cacheGeometry(w),h=148,left=g.L,right=20,top=g.T,bottom=g.T+g.h;
     const dateLabel=value=>value?(daily[0]?.date.slice(0,4)===daily.at(-1)?.date.slice(0,4)?value.slice(5):value.slice(2)).replaceAll('-','/'):'';
-    const x=i=>left+(daily.length>1?i/(daily.length-1):.5)*(w-left-right),y=rate=>bottom-rate*(bottom-top);
+    const x=i=>left+(daily.length>1?i/(daily.length-1):.5)*g.w,y=rate=>bottom-rate*(bottom-top);
     const showAllDots=daily.filter(row=>row.input).length<=90;
     let paths=[],path=[];
     daily.forEach((row,i)=>{if(!row.input){if(path.length)paths.push(path.join(' '));path=[];}else path.push(`${path.length?'L':'M'}${x(i)},${y(row.cached/row.input)}`);});if(path.length)paths.push(path.join(' '));
@@ -122,7 +129,7 @@ const UsageInsights=(()=>{
     const dimension=state.view==='projects'?'项目':'模型';
     const breakdown=[...(state.view==='projects'?report.projects:report.models)].sort((a,b)=>b.cache_savings-a.cache_savings);
     const detail=`<details class="cache-breakdown" ${expanded?'open':''}><summary>查看各${dimension}缓存收益</summary><div class="table-scroll"><table class="data-table"><thead><tr><th>${dimension}</th><th class="num">缓存命中率</th><th class="num">缓存读取 Tokens</th><th class="num">API 等价节省</th></tr></thead><tbody>${breakdown.map(row=>`<tr><td>${state.view==='projects'?`<button class="text-button" data-project-detail="${esc(row.id)}">${esc(row.name)}</button><small>${esc(row.source_name)}</small>`:esc(row.name)}</td><td class="num">${percent(row.cache_rate)}</td><td class="num">${number(row.cached)}</td><td class="num cost">${usd(row.cache_savings)}${row.unpriced_events?'（部分）':''}</td></tr>`).join('')||'<tr><td colspan="4">暂无用量</td></tr>'}</tbody></table></div></details>`;
-    return `<section class="panel cache-panel" aria-labelledby="cacheTitle"><div class="panel-head"><div><h2 id="cacheTitle">缓存收益分析</h2><p data-help>比较缓存读取计价与按普通输入计价的 API 等价成本。</p></div><span class="badge neutral">${s.unpriced_events?'仅已定价部分':'当前筛选范围'}</span></div><div class="insight-stats"><div><span>输入缓存命中率</span><strong>${percent(s.cache_rate)}</strong></div><div><span>API 等价节省</span><strong class="cost">${usd(s.cache_savings)}</strong></div><div><span>相对无缓存成本减少</span><strong>${baseline>0?percent(s.cache_savings/baseline):'—'}</strong></div></div><div class="cache-visuals"><div class="cache-bars">${[['当前 API 等价成本',s.known_cost,'current'],['缓存读取按普通输入计价',baseline,'baseline']].map(([label,value,kind])=>`<div class="cache-bar-row"><div><span>${label}</span><strong>${usd(value)}</strong></div><div class="cache-bar-track"><span class="${kind}" style="width:${Math.max(0,value)/maximum*100}%"></span></div></div>`).join('')}</div><div class="cache-trend"><h3>每日缓存命中率</h3><div class="cache-trend-chart">${cacheTrend(daily)}</div></div></div><p class="insight-note">按相同模型、输入长度和单价，将缓存读取改按普通输入计价；其他用量不变。这是 API 等价差额，不是 Pro 订阅账单节省。${s.unpriced_events?`${compact(s.unpriced_tokens)} tokens 尚未定价，未纳入金额比较。`:''}</p>${detail}</section>`;
+    return `<section class="panel cache-panel" aria-labelledby="cacheTitle"><div class="panel-head"><div><h2 id="cacheTitle">缓存收益分析</h2><p data-help>比较缓存读取计价与按普通输入计价的 API 等价成本。每日缓存命中率图支持滚轮缩放、拖动平移，双击恢复当前筛选范围的完整视图；无输入的日期保留空档。</p></div><span class="badge neutral">${s.unpriced_events?'仅已定价部分':'当前筛选范围'}</span></div><div class="insight-stats"><div><span>输入缓存命中率</span><strong>${percent(s.cache_rate)}</strong></div><div><span>API 等价节省</span><strong class="cost">${usd(s.cache_savings)}</strong></div><div><span>相对无缓存成本减少</span><strong>${baseline>0?percent(s.cache_savings/baseline):'—'}</strong></div></div><div class="cache-visuals"><div class="cache-bars">${[['当前 API 等价成本',s.known_cost,'current'],['缓存读取按普通输入计价',baseline,'baseline']].map(([label,value,kind])=>`<div class="cache-bar-row"><div><span>${label}</span><strong>${usd(value)}</strong></div><div class="cache-bar-track"><span class="${kind}" style="width:${Math.max(0,value)/maximum*100}%"></span></div></div>`).join('')}</div><div class="cache-trend"><h3>每日缓存命中率</h3><div class="cache-trend-chart">${cacheTrend(daily)}</div></div></div><p class="insight-note">按相同模型、输入长度和单价，将缓存读取改按普通输入计价；其他用量不变。这是 API 等价差额，不是 Pro 订阅账单节省。${s.unpriced_events?`${compact(s.unpriced_tokens)} tokens 尚未定价，未纳入金额比较。`:''}</p>${detail}</section>`;
   }
   function pacePanel(quota, extras={}) {
     const q=quota||{},windows=q.windows||[],problem=q.transportError||q.problem?.message;

@@ -45,6 +45,10 @@ The screenshots below show the Chinese interface with simulated data; the live d
 
 Overview includes an annual activity heatmap; detailed analysis contains trends, comparisons and growth attribution. Projects support a treemap and daily/session drill-down. Model charts compare tokens or reference costs, with cache savings and explicit unpriced usage. Time charts support zoom and pan.
 
+Model usage charts offer **Daily / Weekly / Monthly** grouping. Weeks start Monday and months on the first in the reporting time zone; partial periods include only dates in the selected range. Hover to see the exact dates, token categories and model totals. Model selections and zoom/pan remain available, and the grouping is retained in the page URL on reload.
+
+The **daily cache hit-rate** chart in Projects and Models supports wheel zoom and dragging. Double-click inside the plot to restore the full filtered range; zoom buttons and keyboard controls are also available. Automatic updates preserve the viewport, and dates without input remain gaps.
+
 CSV follows date, machine, project, model and account filters. Session exports also include every matching search page and the current sort order. Exports include token/cost breakdowns, cache savings, session identifiers and reporting time zone. Unpriced `cost` is blank; `known_cost` is only the priced subtotal. Calculations retain precision while the interface rounds displayed amounts. Model-chart checkboxes and zoom change only the chart, not summaries or export scope.
 
 ## Pricing
