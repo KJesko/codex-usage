@@ -7,5 +7,12 @@
 .demo-shortcuts { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 .demo-shortcuts button { padding:4px 9px; border:1px solid var(--line); border-radius:5px; font-size:12px; background:var(--bg); }
 .demo-shortcuts button:hover { background:var(--hover); }
+.demo-experience { min-width:0; }
+.demo-scenarios { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
+.demo-scenarios button { padding:7px 12px; border:1px solid var(--line); border-radius:9px; color:var(--text); background:var(--surface); font:inherit; font-size:12px; }
+.demo-scenarios button[aria-pressed=true] { background:var(--accent); color:var(--accent-contrast,#fff); border-color:var(--accent); }
+.demo-scenarios button:hover { border-color:var(--accent); }
+.demo-banner #demoScenarioNote { min-height:1.7em; margin-top:9px; color:var(--text); }
+.demo-banner .demo-actions { align-self:flex-start; }
 #accountStatus { font-size:11px; color:var(--muted); padding:3px 10px 8px; }
 @media(max-width:700px) { .demo-banner { align-items:flex-start; flex-direction:column; gap:12px; padding:14px; } .demo-actions { flex-wrap:wrap; } }
