@@ -987,8 +987,9 @@ body.settings-open .settings-pages { margin:0 auto; }
 .source-path-control .source-action { display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; padding:8px; }
 .source-action svg { width:21px; height:21px; flex-shrink:0; }
 
-.data-settings-group { display:grid; gap:20px; }
-.data-settings-group[hidden] { display:none; }
+.data-settings-group,.coverage-settings-group { display:grid; gap:20px; }
+.data-settings-group[hidden],.coverage-settings-group[hidden] { display:none; }
+.field-save-status[hidden] { display:none; }
 .field-save-status { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:5px 8px; color:var(--muted); font-size:12px; line-height:1.5; min-width:0; }
 #settingsForm>.field>.field-save-status { grid-column:2; }
 .appearance-row>.field-save-status { flex-basis:100%; }
@@ -1011,6 +1012,7 @@ body.settings-open .settings-pages { margin:0 auto; }
 .source-status-main { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:6px 12px; min-width:0; }
 .source-status-main strong { font-size:14px; overflow-wrap:anywhere; }
 .source-state { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.source-state time { white-space:nowrap; }
 .source-state[data-state=ready],.source-state[data-state=error],.source-state[data-state=stale],.source-state[data-state=partial] { color:var(--accent-ink); }
 .source-status-main small,.source-status-detail { grid-column:1/-1; color:var(--muted); font-size:12px; margin:0; overflow-wrap:anywhere; line-height:1.6; }
 .data-source-status>.text-button { white-space:nowrap; flex-shrink:0; font-size:12px; }

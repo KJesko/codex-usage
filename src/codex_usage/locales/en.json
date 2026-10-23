@@ -1385,5 +1385,6 @@
   "内置单价": "Built-in prices",
   "剩余额度": "Remaining quota",
   "发生区间": "Occurrence window",
-  "无法读取已保存值，请稍后重试。": "Could not read the saved value. Please retry later."
+  "无法读取已保存值，请稍后重试。": "Could not read the saved value. Please retry later.",
+  "修改后自动保存，并重新获取和更新数据；保存失败时会在对应设置下提示，可重试。日志索引仅保存用量、会话标题、路径与额度快照。实时额度由 ": "Changes are saved automatically and data is refreshed. Save failures appear below the setting with a retry option. The log index stores only usage, session titles, paths and quota snapshots. Live quota is read by "
 }
