@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — web/source only
+
+- 网页设置增加逐项自动保存反馈、输入校验和失败重试；修改按字段串行提交，刷新保留输入与焦点，保存和数据读取分别提示。新增本地日志、远程服务器、账号额度、模型价格的独立更新时间与异常处理入口。大列表支持搜索分页，轮询防重入并在连接失败时退避，清理失效弹层并限制界面状态缓存。Web settings now show per-field save feedback and retries, preserve drafts/focus, and distinguish saved changes from refresh failures. A source-status panel reports independent update times and recovery actions. Large selectors are searchable and paginated, polling is bounded, and stale UI controls are released.
+
+- 登录从当前页面直接打开官方浏览器流程；登录成功优先从本机凭证提取仅用于显示的脱敏邮箱，额度异步恢复；修复取消后立即重试的流程竞争并补充安全的失败阶段诊断。Sign in directly without navigation, show masked local identity promptly, refresh quota asynchronously, and serialize cancelled sign-in retries.
+
+- 新增看板账号登出与登录入口：登出状态跨重启保存，停止账号采集并隐藏额度、重置卡和账号历史，本地日志继续可用；不修改 Codex 客户端登录。Add persistent dashboard sign-out and sign-in controls without changing Codex client credentials or local usage logs.
+
+- 网页提醒入口改为铃铛及红色未读角标，支持全部已读；已读提醒收进折叠历史并保留本机已读状态。Web alerts now use a bell with an unread badge, support marking all as read, and keep read alerts in collapsible history.
+
+- 邮箱改为登录或账号切换后一次性读取，按账号缓存脱敏标签，重启后复用；失败仅手动重试，停止定时查询。Email is fetched once per sign-in/account change and cached locally in masked, account-scoped form across restarts; failed lookups retry only on manual reconnect.
+- 修复额度和重置卡在慢响应时被过早中止的问题，连续服务错误后自动重建连接；邮箱查询独立重试，并在采集详情中显示脱敏错误与请求耗时。Allow slow quota/reset-card responses, reconnect after repeated service failures, and retry optional email lookup independently. Collection details now show sanitized errors and request duration.
+- 项目与模型分析的每日缓存命中率图支持滚轮缩放、拖动平移及双击恢复全范围，自动刷新保留视图位置。Daily cache hit-rate charts support wheel zoom, drag-to-pan and double-click reset, preserving the viewport during automatic updates.
+- 模型分析支持按天、按周、按月汇总 Tokens 与 API 等价费用，保留模型勾选和缩放拖动；悬浮明细显示实际统计日期范围。周从统计时区的周一开始，月从一日开始，首尾周期只包含当前筛选日期。
+- Model analysis supports daily, weekly and monthly token/cost grouping, with model selection, zoom/pan and exact date ranges in tooltips. Weeks start Monday in the reporting time zone; partial boundary periods include only selected dates.
+
 ## 1.3.0 — 2026-10-22
 
 Stable **web/source** release. 推荐下载 [v1.3.0 网页版 ZIP / Web ZIP](https://github.com/KJesko/codex-usage/releases/download/v1.3.0/codex-usage-1.3.0-web-source.zip)。本次不更新桌面 exe，也不发布到 PyPI。No new desktop executable or PyPI publication.

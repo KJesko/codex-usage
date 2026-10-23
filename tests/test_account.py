@@ -22,6 +22,56 @@ LIMITS = {'accountId': 'account-a', 'rateLimits': {'primary': {'usedPercent': 99
 
 
 class AccountTests(unittest.TestCase):
+    def test_dashboard_logout_discards_inflight_result_and_blocks_refresh(self):
+        entered, release = threading.Event(), threading.Event()
+        def fetch():
+            entered.set()
+            release.wait(2)
+            return normalize_quota(LIMITS)
+        quota = AccountQuota(fetcher=fetch)
+        try:
+            quota.request()
+            self.assertTrue(entered.wait(1))
+            quota.set_signed_out(True)
+            release.set()
+            quota.thread.join(2)
+            self.assertTrue(quota.status()['signed_out'])
+            self.assertIsNone(quota.status()['account'])
+            self.assertIsNone(quota.identity)
+            quota.request(force=True)
+            self.assertFalse(quota.status()['busy'])
+            quota.set_signed_out(False)
+            quota.request(force=True)
+            quota.thread.join(2)
+            self.assertIsNotNone(quota.status()['account'])
+        finally:
+            release.set()
+            quota.close()
+
+    def test_dashboard_logout_persists_and_login_restores_collection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Application(data_dir=Path(temp))
+            app.account_quota.fetcher = Mock(return_value=normalize_quota(LIMITS))
+            app.account_profile.from_local_login = Mock()
+            app.logout_account()
+            self.assertTrue(app.account_logout_path.exists())
+            second = Application(data_dir=Path(temp))
+            try:
+                self.assertTrue(second.account_status()['signed_out'])
+                second.account_quota.request(force=True)
+                self.assertFalse(second.account_quota.busy)
+                app.browser_login.stop.clear()
+                app.login_completed()
+                for _ in range(100):
+                    if app.account_quota.thread and app.account_quota.thread.ident is not None:break
+                    time.sleep(.01)
+                app.account_quota.thread.join(2)
+                self.assertFalse(app.account_logout_path.exists())
+                self.assertFalse(app.account_quota.status()['signed_out'])
+            finally:
+                app.stop_collecting()
+                second.stop_collecting()
+
     def test_routing_timeout_is_distinct_from_signout_and_hides_raw_errors(self):
         rpc = AccountRPC.__new__(AccountRPC)
         rpc.sequence, rpc.timeout = 0, 1
@@ -70,6 +120,87 @@ class AccountTests(unittest.TestCase):
         rpc.close.assert_not_called()
         self.assertEqual(connection()['windows'][0]['remaining_percent'], 91)
         factory.assert_called_once()
+        connection.close()
+
+    def test_slow_success_is_allowed_without_restarting_or_repeating_the_read(self):
+        # Model a response arriving after a minute without sleeping in the test.
+        # The former 25-second deadline would cancel this valid response.
+        rpc = AccountRPC.__new__(AccountRPC)
+        rpc.sequence, rpc.timeout = 0, 25
+        rpc.send, rpc.messages, rpc.close = Mock(), Mock(), Mock()
+        clock = [100.0]
+        def receive(timeout):
+            if rpc.sequence == 1:
+                return {'id': 1, 'result': {}}
+            if timeout < 60:
+                raise queue.Empty
+            clock[0] += 60
+            return {'id': rpc.sequence, 'result': LIMITS}
+        rpc.messages.get.side_effect = receive
+        def create(**options):
+            rpc.timeout = options['timeout']
+            return rpc
+        with patch('codex_usage.account.AccountRPC', side_effect=create) as factory, \
+                patch('codex_usage.account.time.monotonic', side_effect=lambda: clock[0]):
+            connection = AccountConnection()
+            self.assertEqual(connection()['windows'][0]['remaining_percent'], 91)
+            factory.assert_called_once()
+            self.assertEqual([c.args[0]['method'] for c in rpc.send.call_args_list],
+                             ['initialize', 'initialized', 'account/rateLimits/read'])
+            rpc.close.assert_not_called()
+            connection.close()
+
+    def test_repeated_service_failures_reconnect_on_next_refresh_not_in_a_loop(self):
+        for kind in ('routing_timeout', 'offline'):
+            with self.subTest(kind=kind):
+                old, new = Mock(), Mock()
+                old.call.side_effect = [{}, *[AccountError(kind, 'temporary') for _ in range(3)]]
+                new.call.side_effect = [{}, LIMITS]
+                factory = Mock(side_effect=[old, new])
+                connection = AccountConnection(factory)
+                for _ in range(3):
+                    with self.assertRaises(AccountError):
+                        connection()
+                    factory.assert_called_once()
+                old.close.assert_called_once()
+                self.assertEqual(connection()['windows'][0]['remaining_percent'], 91)
+                self.assertEqual(factory.call_count, 2)
+                connection.close()
+
+    def test_success_breaks_consecutive_failure_count(self):
+        rpc = Mock()
+        rpc.call.side_effect = [{}, AccountError('routing_timeout', 'temporary'), LIMITS,
+                               AccountError('offline', 'temporary'), AccountError('offline', 'temporary')]
+        connection = AccountConnection(lambda: rpc)
+        for fails in (True, False, True, True):
+            if fails:
+                with self.assertRaises(AccountError):
+                    connection()
+            else:
+                connection()
+        rpc.close.assert_not_called()
+        connection.close()
+
+    def test_deadline_disconnects_and_failed_reads_do_not_append_stale_history(self):
+        old, new = Mock(), Mock()
+        old.call.side_effect = [{}, LIMITS, AccountError('timeout', 'slow')]
+        new.call.side_effect = [{}, LIMITS]
+        factory = Mock(side_effect=[old, new])
+        connection = AccountConnection(factory)
+        with tempfile.TemporaryDirectory() as directory:
+            tracker = AccountQuota(connection, history_path=Path(directory)/'history.sqlite')
+            tracker._refresh()
+            fetched_at = tracker.status()['fetched_at']
+            with patch.object(tracker.history, 'record') as record:
+                tracker._refresh()
+                record.assert_not_called()
+            old.close.assert_called_once()
+            failed = tracker.status()
+            self.assertTrue(failed['stale'])
+            self.assertEqual(failed['fetched_at'], fetched_at)
+            self.assertGreaterEqual(failed['collector']['last_duration_seconds'], 0)
+            tracker._refresh()
+            self.assertFalse(tracker.status()['stale'])
         connection.close()
 
     def test_missing_identity_or_plan_does_not_block_live_quota(self):

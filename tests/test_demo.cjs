@@ -34,6 +34,9 @@ test('demo API bridge intercepts account and mutation requests without reaching 
   assert.equal(refreshes,1);assert.equal(loads,1);assert.equal(calls,0);
   await context.window.fetch('/api/settings',{method:'POST',body:JSON.stringify({timezone:'America/Los_Angeles'})});
   assert.equal(context.accountData.history_scope,'demo-account:America/Los_Angeles');
+  const patched=await context.window.fetch('/api/settings/patch',{method:'POST',body:JSON.stringify({avatar_initials:'AB'})});
+  const saved=await patched.json();assert.equal(saved.avatar_initials,'AB');assert.equal(saved.timezone,'America/Los_Angeles');
+  const status=await (await context.window.fetch('/api/status')).json();assert.equal(status.local.running,false);assert.ok(status.remotes.length);assert.equal(calls,0);
 });
 test('synthetic totals reconcile across dimensions and obey model, machine, date and session filters',()=>{
   const demo=create(catalog,now),r=demo.report(query);

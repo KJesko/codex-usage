@@ -3,6 +3,73 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {waterfallRows,dailyPaceSeries}=require('../src/codex_usage/static/usage-insights.js');
 
+test('cache chart zooms, pans, resets, preserves polling position and releases old listeners',()=>{
+  const fs=require('node:fs'),vm=require('node:vm');
+  class Host extends EventTarget {
+    constructor(){super();this.clientWidth=400;this.clientHeight=148;this.dataset={};this.innerHTML='';this.isConnected=true;
+      this.classList={add(){},remove(){}};this.captured=new Set();this.parentNode={insertBefore:toolbar=>this.toolbar=toolbar};}
+    setAttribute(){}
+    contains(){return false;}
+    querySelectorAll(){return [];}
+    getBoundingClientRect(){return {left:0,top:0};}
+    setPointerCapture(id){this.captured.add(id);}
+    hasPointerCapture(id){return this.captured.has(id);}
+    releasePointerCapture(id){this.captured.delete(id);}
+  }
+  const document={activeElement:null,addEventListener(){},createElement(){
+    const toolbar=new EventTarget(),nodes=new Map();
+    toolbar.querySelector=selector=>{if(!nodes.has(selector))nodes.set(selector,{});return nodes.get(selector);};
+    toolbar.remove=()=>toolbar.removed=true;
+    return toolbar;
+  }};
+  const context=vm.createContext({module:{exports:{}},document,AbortController,esc:String,percent:n=>(n*100).toFixed(1)+'%',
+    state:{view:'projects',source:'',project:'',model:'',account:''}});
+  const viewport=fs.readFileSync(require.resolve('../src/codex_usage/static/model-charts.js'),'utf8');
+  vm.runInContext(viewport.slice(0,viewport.indexOf('// UI choices')),context);
+  vm.runInContext(fs.readFileSync(require.resolve('../src/codex_usage/static/usage-insights.js'),'utf8'),context);
+  const {mountCache,release,cacheTrend}=context.module.exports;
+  const daily=Array.from({length:20},(_,i)=>({date:`2026-07-${String(i+1).padStart(2,'0')}`,input:i===8?0:100,cached:i===8?0:80+i}));
+  const report={range:{since:'2026-07-01',until:'2026-07-20'},timezone:'Asia/Shanghai',
+    model_timeline:daily.map(row=>({date:row.date,models:[{input:row.input,cached:row.cached}]}))};
+  const rootFor=host=>({querySelector:()=>host,contains:node=>node===host});
+  const send=(host,type,props={})=>{
+    const event=new Event(type,{cancelable:true});Object.assign(event,{button:0,pointerId:1,clientX:200,clientY:60,...props});
+    host.dispatchEvent(event);return event;
+  };
+  let host=new Host(),root=rootFor(host);mountCache(root,report);
+  const full=host.innerHTML;
+  assert.equal(full,cacheTrend(daily,400));
+  assert.equal((full.match(/<path /g)||[]).length,2,'no-input days must remain gaps');
+  assert.equal(send(host,'wheel',{deltaY:-400,clientY:145}).defaultPrevented,false,'scrolling outside the plot still scrolls the page');
+  assert.equal(send(host,'wheel',{deltaY:-400,ctrlKey:true}).defaultPrevented,false,'browser zoom is not intercepted');
+  assert.equal(send(host,'wheel',{deltaY:-400}).defaultPrevented,true);
+  assert.notEqual(host.innerHTML,full,'zoom must redraw even when chart width stays the same');
+  assert.ok(host.dataset.visibleEnd-host.dataset.visibleStart<20);
+  const beforePan=host.dataset.visibleStart;
+  send(host,'pointerdown');send(host,'pointermove',{clientX:120});send(host,'pointerup',{clientX:120});
+  assert.ok(host.dataset.visibleStart>beforePan,'dragging left reveals later dates');
+  assert.equal(host.captured.size,0);
+  const position={...host.dataset},zoomed=host.innerHTML,oldHost=host;
+  release(root);assert.equal(oldHost.toolbar.removed,true);
+  send(oldHost,'wheel',{deltaY:400});assert.equal(oldHost.innerHTML,zoomed,'detached charts cannot process input');
+  host=new Host();root=rootFor(host);mountCache(root,report);
+  assert.deepEqual(host.dataset,position,'polling must restore the same range');
+  assert.equal(host.innerHTML,zoomed);
+  assert.equal(send(host,'dblclick').defaultPrevented,true);
+  assert.equal(host.dataset.visibleStart,0);assert.equal(host.dataset.visibleEnd,20);
+  assert.equal(host.innerHTML,full,'double-click must restore the full filtered chart, including its gaps');
+  send(host,'wheel',{deltaY:-400});release(root);
+  context.state.source='other-machine';host=new Host();root=rootFor(host);mountCache(root,report);
+  assert.equal(host.dataset.visibleStart,0);assert.equal(host.dataset.visibleEnd,20,'different filters start with their full range');
+  release(root);
+  for(const rows of [[],report.model_timeline.slice(0,1)]){
+    host=new Host();root=rootFor(host);mountCache(root,{...report,model_timeline:rows});
+    assert.equal(send(host,'wheel',{deltaY:-400}).defaultPrevented,false);
+    send(host,'dblclick');assert.doesNotMatch(host.innerHTML,/NaN|Infinity/);
+    release(root);
+  }
+});
+
 test('cache charts retain isolated active days even above the ninety-day dot threshold',()=>{
   const fs=require('node:fs'),vm=require('node:vm');
   const context={module:{exports:{}},esc:String,percent:n=>(n*100).toFixed(1)+'%'};

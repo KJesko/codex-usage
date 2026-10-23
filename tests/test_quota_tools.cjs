@@ -83,10 +83,46 @@ test('collection disclosure distinguishes polling, official sampling and chart a
   for(const text of ['额度采集 · 每 60 秒','共用一次额度读取','每 15 秒','每 1.2 秒','最短间隔 5 秒','不会额外请求额度','每 5 分钟'])assert.ok(html.includes(text),text);
 });
 
+test('collection disclosure separates quota failures from optional email lookup failures',()=>{
+  const html=tools().collection({collector:{running:true,request_timeout_seconds:90,last_duration_seconds:59.6},
+    problem:{message:'quota timed out'},profile_status:{problem:{message:'profile route unavailable'}}});
+  for(const text of ['90','59.6','额度读取：quota timed out','账号邮箱：profile route unavailable','不定时查询'])assert.ok(html.includes(text),text);
+  const healthy=tools().collection({collector:{running:true},profile_status:{problem:null}});
+  assert.ok(!healthy.includes('class="is-stale">额度读取：'));
+  assert.ok(!healthy.includes('class="is-stale">账号邮箱：'));
+});
+
 test('all history includes early observations without padding the entire retention window',async()=>{
   const t=tools();t.display(quota);await settle();
   const ticks=Array.from({length:91},(_,i)=>({at:i*86400,date:String(i)}));
   t.pending[0].resolve({range:{since:0,until:90*86400},ticks,groups:[{samples:[{at:40*86400+60}],events:[]}]});await settle();
   const q=t.display(quota);
   assert.equal(q.range.since,40*86400);assert.equal(q.ticks.length,51);
+});
+
+function alertsHarness(items) {
+  const nodes={alertsButton:{setAttribute(){}},quotaAlertBanner:{},alertsPopover:{innerHTML:'',scrollTop:0,querySelector(){return null;},matches(){return false;}}};
+  const listeners={},calls=[];
+  const context=vm.createContext({URLSearchParams,esc:String,accountTime:String,icon:()=>'<svg></svg>',
+    document:{querySelector(){return null;},getElementById:id=>nodes[id],addEventListener(type,fn){listeners[type]=fn;}},
+    window:{addEventListener(){}},settings:{csrf:'test'},accountData:{alerts:items},data:{},
+    notify(){},api:async(url)=>{calls.push(url);const id=new URLSearchParams(url.split('?')[1]).get('id');return {alerts:items.map(a=>{if(a.id===id)a.acknowledged=true;return a;})};}});
+  vm.runInContext(fs.readFileSync(require.resolve('../src/codex_usage/static/quota-tools.js'),'utf8')+'\nthis.tools=QuotaTools;this.renderAccount=()=>QuotaTools.render(accountData);',context);
+  return {nodes,calls,render:()=>context.tools.render(context.accountData),click:()=>listeners.click({target:{closest:()=>({id:'ackAllAlerts',dataset:{}})}})};
+}
+test('read alerts are folded into history and only unread alerts appear in the main list',()=>{
+  const h=alertsHarness([{id:'one',message:'Unread message',at:1},{id:'two',message:'Read message',at:2,acknowledged:true}]);
+  h.render();const html=h.nodes.alertsPopover.innerHTML;
+  assert.match(h.nodes.alertsButton.innerHTML,/alerts-count/);
+  assert.ok(html.indexOf('Unread message')<html.indexOf('<details'));
+  assert.ok(html.indexOf('Read message')>html.indexOf('<details'));
+  assert.doesNotMatch(html,/<details class="alerts-history" open/);
+});
+test('mark all acknowledges unread IDs and removes the badge without deleting history',async()=>{
+  const h=alertsHarness([{id:'one',message:'First',at:1},{id:'two',message:'Second',at:2},{id:'old',message:'Old',at:0,acknowledged:true}]);
+  h.render();await h.click();h.render();
+  assert.equal(h.calls.length,2);assert.ok(h.calls.every(url=>!url.includes('old')));
+  assert.doesNotMatch(h.nodes.alertsButton.innerHTML,/alerts-count/);
+  assert.match(h.nodes.alertsPopover.innerHTML,/暂无未读提醒/);
+  assert.match(h.nodes.alertsPopover.innerHTML,/历史记录 <span>\(3\)/);
 });

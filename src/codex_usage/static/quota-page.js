@@ -8,9 +8,10 @@ const QuotaPage=(()=>{
   const eventTitle=e=>e.kind==='scheduled' && e.label!=='每周额度'?'正常周期重置':labels[e.kind]||'额度变化';
   const link=(url,label)=>typeof url==='string'&&/^https:\/\/(?:codex-resets\.com|x\.com|twitter\.com|openai\.com)(?:\/|$)/.test(url)?`<a class="text-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`:'';
   function panel(){
-    return `<div id="quotaCurrent" class="quota-current"></div><div id="quotaPace"></div><section class="panel reset-records"><div class="panel-head"><div><h2>重置记录</h2><p data-help>只记录实际检测到的额度重置，保留 90 天。满额闲置时的截止时间变化不会另记事件。</p></div><label><span class="sr-only">筛选重置事件</span><select id="resetEventFilter" aria-label="筛选重置事件">${[['all','全部重置'],['official','官方重置'],['credit','重置卡重置'],['scheduled','周期重置']].map(([value,label])=>`<option value="${value}" ${eventFilter===value?'selected':''}>${label}</option>`).join('')}</select></label></div><div id="resetEventList"></div><p class="insight-note">偏离正常周期的额度恢复默认归为官方重置；同期卡数减少则归为手动重置卡重置。两种原因都是规则推断，非官方原因回执。卡片过期或同时发卡可能影响归因。</p></section><section class="panel reset-forecast"><div class="panel-head"><div><h2>公开重置动态</h2><p data-help>来自第三方对公开消息的整理，与个人账号实际重置记录分开。</p></div>${link(publicHome,'Codex Resets')}</div><div id="resetForecastBody"></div></section><details class="quota-settings"><summary>额度提醒与采集设置</summary>${QuotaTools.settingsPanel()}</details>`;
+    return `<div id="quotaCurrent" class="quota-current"></div><div id="quotaPace"></div><section class="panel reset-records"><div class="panel-head"><div><h2>重置记录</h2><p data-help>只记录实际检测到的额度重置，保留 90 天。满额闲置时的截止时间变化不会另记事件。</p></div><label><span class="sr-only">筛选重置事件</span><select id="resetEventFilter" aria-label="筛选重置事件">${[['all','全部重置'],['official','官方重置'],['credit','重置卡重置'],['scheduled','周期重置']].map(([value,label])=>`<option value="${value}" ${eventFilter===value?'selected':''}>${label}</option>`).join('')}</select></label></div><div id="resetEventList" tabindex="0" role="region" aria-label="重置记录"></div><p class="insight-note">偏离正常周期的额度恢复默认归为官方重置；同期卡数减少则归为手动重置卡重置。两种原因都是规则推断，非官方原因回执。卡片过期或同时发卡可能影响归因。</p></section><section class="panel reset-forecast"><div class="panel-head"><div><h2>公开重置动态</h2><p data-help>来自第三方对公开消息的整理，与个人账号实际重置记录分开。</p></div>${link(publicHome,'Codex Resets')}</div><div id="resetForecastBody"></div></section><details class="quota-settings"><summary>额度提醒与采集设置</summary>${QuotaTools.settingsPanel()}</details>`;
   }
   function currentMarkup(q){
+    if(q?.signed_out || q?.problem?.kind==='signed_out')return '<section class="panel quota-current-card"><h2>需要登录</h2><p>请登录后查看额度和重置卡，本地日志仍可使用。</p><button class="button primary" data-account-login>登录账号</button></section>';
     const credits=q?.reset_credits||{},details=credits.details;
     const old=q?.stale||q?.transportError;
     return `${(q?.windows||[]).map(w=>`<section class="panel quota-current-card"><h2>${esc(w.bucket!=='codex'?w.bucket_name+' · ':'')}${esc(w.label)}</h2><strong>${w.remaining_percent==null?'—':number(w.remaining_percent)+'%'}<small>剩余${old?' · 上次结果':''}</small></strong><div class="quota-track"><span style="width:${w.remaining_percent??0}%"></span></div><p>${w.resets_at?`下次重置 ${time(w.resets_at)}`:'下次重置时间未知'}</p><p>${w.resets_at?`<span data-reset-at="${w.resets_at}">${remainingTime(w.resets_at-Date.now()/1000)}</span>`:''}</p></section>`).join('')}<section class="panel quota-current-card reset-credit-card"><h2>可用重置卡</h2><strong>${credits.available_count==null?'—':number(credits.available_count)}<small>${credits.available_count==null?'接口暂未提供数量':'张'+(old?' · 上次结果':'')}</small></strong><p data-help>随账号额度同步，每 60 秒检查变化。</p>${details?.length?`<details><summary>查看到期时间${details.length<credits.available_count?'（部分）':''}</summary><ul>${details.map((c,i)=>`<li>卡片 ${i+1} · ${c.expires_at?time(c.expires_at)+' 到期':'未提供到期时间'}</li>`).join('')}</ul></details>`:credits.available_count!=null?`<p>${details===null?'接口仅返回数量':'暂无卡片明细'}</p>`:''}</section>`;
@@ -27,12 +28,18 @@ const QuotaPage=(()=>{
 
   function renderEvents(q){
     const host=document.getElementById('resetEventList');if(!host)return;
+    const scrollTop=host.scrollTop;
+    const edge=host.getBoundingClientRect().top;
+    const anchor=scrollTop>0?[...host.querySelectorAll('[data-event-id]')].find(el=>el.getBoundingClientRect().bottom>edge):null;
+    const anchorId=anchor?.dataset.eventId,anchorOffset=anchor?anchor.getBoundingClientRect().top-edge:0;
     const open=new Set([...host.querySelectorAll('details[open]')].map(el=>el.dataset.eventId));
     const focused=document.activeElement?.closest?.('[data-event-id]')?.dataset.eventId;
     const rows=resetEvents(q);
     const html=(rows.slice(0,eventLimit).map(eventMarkup).join('')||'<p class="reset-empty">还没有检测到匹配的重置。首次同步建立基准，实际额度恢复后会自动记录。</p>')+(rows.length>eventLimit?`<button class="button small reset-more" id="moreResetEvents">查看更多（还有 ${rows.length-eventLimit} 条）</button>`:'');
     QuotaDOM.patch(host,html);
     host.querySelectorAll('details').forEach(el=>{el.open=open.has(el.dataset.eventId);if(el.dataset.eventId===focused)el.querySelector('summary').focus({preventScroll:true});});
+    const retained=anchorId?[...host.querySelectorAll('[data-event-id]')].find(el=>el.dataset.eventId===anchorId):null;
+    host.scrollTop=retained?host.scrollTop+retained.getBoundingClientRect().top-host.getBoundingClientRect().top-anchorOffset:scrollTop;
   }
   function forecastMarkup(f){
     if(!f)return '<p class="reset-empty">正在读取公开重置动态…</p>';
@@ -58,12 +65,14 @@ const QuotaPage=(()=>{
     const open=host.querySelector('details')?.open,focus=host.querySelector('summary')===document.activeElement;
     QuotaDOM.patch(host,currentMarkup(q));
     const detail=host.querySelector('details');if(detail){detail.open=Boolean(open);if(focus)detail.querySelector('summary').focus({preventScroll:true});}
+    const events=document.getElementById('resetEventList');
+    if(events)events.closest('section').hidden=Boolean(q?.signed_out);
     renderEvents(q);
     QuotaDOM.patch(document.getElementById('resetForecastBody'),forecastMarkup(forecast));
     refreshForecast();
   }
   if(typeof document!=='undefined'){
-    document.addEventListener('change',e=>{if(e.target.id==='resetEventFilter'){eventFilter=e.target.value;eventLimit=10;renderEvents(accountData);}});
+    document.addEventListener('change',e=>{if(e.target.id==='resetEventFilter'){eventFilter=e.target.value;eventLimit=10;const list=document.getElementById('resetEventList');if(list)list.scrollTop=0;renderEvents(accountData);}});
     document.addEventListener('click',e=>{if(e.target.closest('#moreResetEvents')){eventLimit+=10;renderEvents(accountData);}});
   }
   return {panel,render,refreshForecast,resetEvents,eventTitle,eventMarkup,forecastMarkup};

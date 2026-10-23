@@ -11,12 +11,13 @@
       let result;
       switch(url.pathname){
         case '/api/data':result=demo.report(query);break;
-        case '/api/settings':
+        case '/api/settings':case '/api/settings/patch':
           result=demo.settings(options.method==='POST'?JSON.parse(options.body):null);
           // saveSettings renders the cached account immediately; update its history
           // scope too, so a timezone change does not wait for the next account poll.
           if(options.method==='POST'&&typeof accountData!=='undefined')accountData=demo.quota();
           break;
+        case '/api/status':result={local:{running:false,last_scan:demo.quota().fetched_at},remotes:demo.remotes(),prices:{last_check:Date.now()/1000}};break;
         case '/api/account':case '/api/account/refresh':result=demo.quota();break;
         case '/api/account/range':result=demo.quotaRange();break;
         case '/api/account/acknowledge':result=demo.acknowledge(query.id);break;

@@ -38,6 +38,7 @@ const HintHelp=(()=>{
     }
     const next=new Map();
     for(const source of document.querySelectorAll(selector)){
+      if(source.closest('[data-settings-page="about"]')){source.classList.remove('help-source');continue;}
       if(source.closest('#hintHelpPopover') || source.matches('.is-stale,[role="alert"]') || source.querySelector('[role="alert"],.is-stale'))continue;
       // The outer explanatory block already includes its children.
       if(source.parentElement?.closest(selector))continue;

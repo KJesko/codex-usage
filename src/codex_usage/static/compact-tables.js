@@ -36,7 +36,7 @@ const CompactTables=(()=>{
         const summary=document.createElement('summary');summary.textContent='更多信息';details.append(summary);
         const list=document.createElement('dl');
         for(const i of other){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=headers[i];dd.innerHTML=cells[i].innerHTML;list.append(dt,dd);}
-        details.append(list);details.addEventListener('toggle',()=>{if(details.open)expanded.add(rowKey);else expanded.delete(rowKey);});
+        details.append(list);details.addEventListener('toggle',()=>{if(details.open){expanded.add(rowKey);if(expanded.size>200)expanded.delete(expanded.values().next().value);}else expanded.delete(rowKey);});
         card.append(details);panel.append(card);
       }
       wrap.querySelector(':scope > .compact-table')?.remove();wrap.classList.add('adaptive-table');wrap.append(panel);

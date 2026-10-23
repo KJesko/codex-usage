@@ -102,6 +102,8 @@ Custom `CODEX_HOME` must match between login and the backend. Enabling Windows s
 
 Quota is collected every 60 seconds by default. Failure does not prevent token reporting. The dashboard does not directly read or copy `auth.json` / OAuth tokens, request passwords or API keys, or perform purchases, conversations or quota resets. Email lookup is independent of quota collection.
 
+Quota and reset cards share one request. Slow responses may take up to 90 seconds; no duplicate request is sent while one is pending. After three consecutive service/routing failures, the next collection establishes a new connection. Email is read once after login or a detected account change, with a separate 30-second timeout. Only the masked label is cached locally, isolated by account and reused after restart, without polling. Reconnect quota manually to retry a failed lookup. Expand the collection status to see the specific error and last request duration. A timeout does not mean the login expired; sign in again only when authentication is explicitly reported as expired. Old quota/card values stay marked as the previous result and are not saved as new observations.
+
 ## Configuration & startup options
 
 Change sources, reporting time zone and usage start date in **Data & settings**, model prices in **Pricing & billing**, and quota alerts in **Quota & resets**. The default reporting time zone is `America/Los_Angeles`; choose another IANA zone as needed.

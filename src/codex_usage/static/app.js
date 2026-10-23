@@ -9,6 +9,7 @@ const costLabel = (r) => r.unpriced_events ? usd(r.known_cost) + ' + 待定价' 
 const percent = (n) => (n * 100).toFixed(1) + '%';
 const colors = {uncached:'#da7756', cached:'#d9cec0', write:'#aa966a', output:'#7d8e87'};
 const paths = {
+  bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4',
   overview:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   folder:'M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z',
   chat:'M21 11a8 8 0 0 1-8 8H8l-5 3V11a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z M7 9h10M7 13h7',
@@ -47,12 +48,81 @@ function readRoute(search) {
 }
 const state = {...readRoute(location.search), metric:'tokens', search:'', sort:'total', page:1};
 let data = null, settings = null, requestId = 0, controller = null, toastTimer = null;
-let accountData = null, accountPending = false, accountTimer = null;
+let accountData = null, accountPending = false, accountTimer = null, accountGeneration = 0;
 let projectDetailReport = null, projectDetailMetric = 'tokens', projectDetailController = null;
 let sessionDetailController = null;
 let filterDraft = null;
+let dataSnapshot=null, statusReading=false, statusError='', statusChecked=null, reportError='', remoteReading=false;
+let remotePollAt=0,remoteFailures=0;
+let settingsWrite=Promise.resolve(), appearanceSaveError='';
 const restored = new URLSearchParams(location.search);
-try { document.body.classList.toggle('dark',localStorage.getItem('codex-usage-theme')==='dark'); } catch (_) {}
+const appearanceDefaults={mode:'system',accent:'#da7756',font:'serif',customFont:'',size:15};
+let appearance={...appearanceDefaults};
+try{const saved=JSON.parse(localStorage.getItem('codex-usage-appearance')||'null');appearance={...appearanceDefaults,...(saved||{mode:localStorage.getItem('codex-usage-theme')||'system'})};}catch(_){}
+function applyAppearance(){
+  const dark=appearance.mode==='dark'||(appearance.mode==='system'&&window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  document.body.classList.toggle('dark',dark);
+  if(!document.body.style)return;
+  const accent=/^#[0-9a-f]{6}$/i.test(appearance.accent)?appearance.accent:appearanceDefaults.accent;
+  const rgb=[1,3,5].map(i=>parseInt(accent.slice(i,i+2),16));
+  const luminance=rgb.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
+  const fonts={serif:'Georgia, "Source Han Serif SC", serif',sans:'system-ui, "Microsoft YaHei", sans-serif',mono:'"JetBrains Mono", Consolas, monospace'};
+  const custom=String(appearance.font.startsWith('local:')?appearance.font.slice(6):appearance.customFont||'').replace(/["\\;{}<>]/g,'').slice(0,80);
+  const font=(appearance.font==='custom'||appearance.font.startsWith('local:'))&&custom?`"${custom}", system-ui, sans-serif`:fonts[appearance.font]||fonts.serif;
+  const values={'--accent':accent,'--chart-strong':accent,'--accent-soft':`color-mix(in srgb, ${accent} 18%, var(--bg))`,'--accent-ink':`color-mix(in srgb, ${accent} 65%, ${dark?'white':'black'})`,'--green':`color-mix(in srgb, ${accent} 65%, ${dark?'white':'black'})`,'--accent-contrast':luminance>.179?'#111111':'#ffffff','--font-ui':font};
+  for(const [key,value] of Object.entries(values))document.body.style.setProperty(key,value);
+  document.body.style.fontFamily=font;
+  document.body.style.fontSize=Math.max(12,Math.min(20,Number(appearance.size)||15))+'px';
+}
+function saveAppearance(){
+  applyAppearance();
+  try{localStorage.setItem('codex-usage-appearance',JSON.stringify(appearance));localStorage.setItem('codex-usage-theme',appearance.mode);appearanceSaveError='';}
+  catch(_){appearanceSaveError='外观已应用，但浏览器未能保存。请检查存储权限后重试。';}
+  paintAppearanceSave();
+}
+let detectedFonts=[];
+function detectCommonFonts(){
+  if(!document.createElement)return;
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');if(!ctx)return;
+  const sample='mmmmmmWWWWW0123456789汉字测试';
+  const bases=['monospace','serif','sans-serif'];
+  const widths=bases.map(base=>{ctx.font='72px '+base;return ctx.measureText(sample).width;});
+  detectedFonts=['Arial','Calibri','Cambria','Candara','Consolas','Courier New','Georgia','Helvetica','Menlo','Microsoft YaHei','Microsoft JhengHei','PingFang SC','SimHei','SimSun','Source Han Sans SC','Source Han Serif SC','Noto Sans CJK SC','Noto Serif CJK SC','Segoe UI','Tahoma','Times New Roman','Trebuchet MS','Verdana','JetBrains Mono'].filter(name=>bases.some((base,i)=>{ctx.font='72px "'+name+'",'+base;return Math.abs(ctx.measureText(sample).width-widths[i])>.01;}));
+}
+function sourceActionIcon(name){
+  const shapes={folder:'<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10h18"/>',detect:'<circle cx="12" cy="12" r="8"/><path d="M12 8a4 4 0 1 0 4 4M12 12l7-7"/><circle cx="12" cy="12" r="1"/>',check:'<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="m8 13 3 3 5-5"/>'};
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name]}</svg>`;
+}
+function roundedIcon(name){const path={check:'m5 12 4 4 10-10',down:'m6 9 6 6 6-6',up:'m6 15 6-6 6 6'}[name];return `<svg class="rounded-ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg>`;}
+function fontLabel(){return ({serif:'系统衬线',sans:'系统无衬线',mono:'系统等宽',custom:'手动输入字体名称'})[appearance.font]||appearance.font.slice(6);}
+function fontOptions(){
+  const item=(value,label)=>`<button type="button" role="option" aria-selected="${appearance.font===value}" data-font-option="${esc(value)}"><span>${esc(label)}</span><span aria-hidden="true">${appearance.font===value?roundedIcon('check'):''}</span></button>`;
+  const names=[...new Set([...detectedFonts,...(appearance.font.startsWith('local:')?[appearance.font.slice(6)]:[])])].sort((a,b)=>a.localeCompare(b));
+  return [['serif','系统衬线'],['sans','系统无衬线'],['mono','系统等宽']].map(([v,l])=>item(v,l)).join('')+'<div class="font-divider" role="presentation"><span>自定义字体</span></div>'+names.map(name=>item('local:'+name,name)).join('')+item('custom','手动输入字体名称');
+}
+detectCommonFonts();
+function themeModeIcon(mode){
+  const sun='<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>';
+  const moon='<path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/>';
+  const both='<path d="M5 19 19 5M10 3v2M3 10h2M5 5l1.4 1.4M7 13a4.2 4.2 0 0 1 6-6M20 11a5.8 5.8 0 0 1-7 8 5.8 5.8 0 0 0 7-8Z"/>';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${mode==='light'?sun:mode==='dark'?moon:both}</svg>`;
+}
+function syncModeButtons(){document.querySelectorAll('[data-theme-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.themeMode===appearance.mode)));}
+function appearanceView(){
+  return `<section class="panel appearance-panel" data-settings-page="appearance"><div class="panel-head"><h2>外观与偏好</h2><button class="button" data-appearance-reset>恢复默认外观</button></div><div class="settings-body appearance-layout"><div class="appearance-controls"><div class="appearance-row"><label for="settingsLanguage">界面语言</label><select id="settingsLanguage" data-settings-language><option value="zh-CN" ${document.documentElement.lang.startsWith('en')?'':'selected'}>简体中文</option><option value="en" ${document.documentElement.lang.startsWith('en')?'selected':''}>English</option></select></div>
+  <div class="appearance-row"><span id="appearanceModeLabel">主题模式</span><div class="appearance-mode-buttons" role="group" aria-labelledby="appearanceModeLabel">${[['light','浅色'],['dark','深色'],['system','跟随系统']].map(([mode,label])=>`<button type="button" data-theme-mode="${mode}" aria-label="${label}" title="${label}" aria-pressed="${appearance.mode===mode}">${themeModeIcon(mode)}</button>`).join('')}</div></div>
+  <div class="appearance-row"><span>强调色</span><div class="appearance-colors">${['#da7756','#3b82f6','#16a085','#8b5cf6','#db2777','#737373'].map(color=>`<button class="appearance-swatch" style="--swatch:${color}" data-accent="${color}" aria-label="${color}" aria-pressed="${appearance.accent===color}"></button>`).join('')}<button type="button" class="button" data-custom-color>自定义</button><input class="appearance-color-input" type="color" data-appearance="accent" aria-label="自定义强调色" tabindex="-1" value="${esc(appearance.accent)}"></div></div>
+  <div class="appearance-row"><span id="fontPickerLabel">界面字体</span><div class="font-row-controls"><button class="text-button" data-detect-fonts>检测全部本机字体</button><details class="font-picker"><summary aria-haspopup="listbox" aria-labelledby="fontPickerLabel fontPickerValue"><span id="fontPickerValue">${esc(fontLabel())}</span><span class="font-chevron">${roundedIcon('down')}</span></summary><div class="font-menu" role="listbox" aria-labelledby="fontPickerLabel">${fontOptions()}</div></details></div></div>
+  <div class="subtle font-detection-status" id="fontDetectionStatus" role="status"></div>
+  <div class="appearance-row" data-custom-font-field ${appearance.font==='custom'?'':'hidden'}><label for="customFontName">本机字体名称</label><div><input id="customFontName" data-appearance="customFont" maxlength="80" value="${esc(appearance.customFont)}" placeholder="Microsoft YaHei" ${appearance.font==='custom'?'':'disabled'}><span class="subtle">仅使用本机已安装字体，未安装时使用系统字体。</span></div></div>
+  <div class="appearance-row"><label for="appearanceSize">正文字号</label><div class="appearance-size"><input id="appearanceSize" type="number" min="12" max="20" step="1" data-appearance="size" value="${Number(appearance.size)||15}"><span aria-hidden="true">px</span><div class="appearance-size-buttons"><button type="button" data-size-step="1" aria-label="增大字号">${roundedIcon('up')}</button><button type="button" data-size-step="-1" aria-label="减小字号">${roundedIcon('down')}</button></div></div></div>
+  <div class="appearance-row"><label for="settingsAvatar">头像文字</label><input id="settingsAvatar" aria-label="自定义头像文字" maxlength="3" pattern="[A-Za-z0-9\\u3400-\\u9fff]{1,3}" required value="${esc(settings.avatar_initials || 'CU')}" autocomplete="off"><p>自定义头像文字，支持一至三个英文字母、数字或汉字。修改后自动保存。</p></div>
+  </div><div class="appearance-preview"><span class="badge">实时预览</span><h2>你的用量，一目了然</h2><p>外观修改立即生效，自动保存在当前浏览器。</p><div class="quota-track"><span style="width:68%"></span></div><button class="button primary" type="button" disabled>示例按钮</button></div></div></section>`;
+}
+
+applyAppearance();
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(appearance.mode==='system')applyAppearance();});
+
 
 function dateInZone() {
   return new Intl.DateTimeFormat('en-CA', {timeZone:settings?.timezone || 'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -81,21 +151,31 @@ function syncURL(push=false) {
 function notify(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3000); }
 function failure(message) { $('error').textContent = message; $('error').hidden = false; }
 async function sessionFetch(url, options) {
-  const response = await fetch(url, options);
+  const response = await boundedFetch(url, options);
   const token=options?.headers?.['X-CSRF-Token'];
   if(response.status===403 && token && options.method==='POST') {
     // A restarted local service has a new token. Retry only rejected requests,
     // once, without replacing settings or discarding an unsaved form.
-    const fresh=await fetch('/api/settings');
+    const fresh=await boundedFetch('/api/settings');
     if(fresh.ok) {
       const current=await fresh.json();
       if(current.csrf && current.csrf!==token) {
         settings.csrf=current.csrf;
-        return fetch(url,{...options,headers:{...options.headers,'X-CSRF-Token':current.csrf}});
+        return boundedFetch(url,{...options,headers:{...options.headers,'X-CSRF-Token':current.csrf}});
       }
     }
   }
   return response;
+}
+async function boundedFetch(url,options={}){
+  const request=new AbortController(),abort=()=>request.abort();
+  if(options.signal?.aborted)request.abort();
+  else options.signal?.addEventListener('abort',abort,{once:true});
+  let expired=false;
+  const timer=setTimeout(()=>{expired=true;request.abort();},url.startsWith('/api/data')?60000:20000);
+  try{return await fetch(url,{...options,signal:request.signal});}
+  catch(error){if(expired)throw new Error('请求超时，请检查本地服务后重试。');throw error;}
+  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);}
 }
 async function api(url, options) {
   const response = await sessionFetch(url, options);
@@ -104,6 +184,7 @@ async function api(url, options) {
   return result;
 }
 function updateControls() {
+  document.body.classList.toggle('settings-open',state.view==='settings');
   const analysis=state.view==='overview' && state.tab==='analysis';
   const [title, subtitle] = analysis?['详细分析','用量变化、趋势明细、项目排行和近期统计。']:views[state.view];
   $('pageTitle').textContent = title;
@@ -116,7 +197,7 @@ function updateControls() {
   $('export').title = state.view==='sessions'?'导出当前搜索和筛选匹配的全部会话，包含所有分页':'导出当前筛选范围的统计结果';
   paintIdentity();
   $('filterButton').hidden=state.view==='quota';
-  $('alertsButton').hidden=state.view!=='quota';
+  $('alertsButton').hidden=false;
   $('quotaAlertBanner').hidden=state.view!=='quota';
   updateFilterControls();
   if (data) {
@@ -164,7 +245,7 @@ async function load(force=false) {
     controller?.abort();requestId++;$('refresh').disabled=false;$('loading').hidden=true;$('content').hidden=false;
     if(!$('quotaCurrent'))render();else {QuotaPage.render(accountData);renderQuotaPace();}
     if(force)refreshAccount(true);
-    return;
+    return true;
   }
   const id = ++requestId;
   controller?.abort();
@@ -175,14 +256,20 @@ async function load(force=false) {
     const next = await api('/api/data?' + params(force ? {refresh:'1'} : {}), {signal:controller.signal});
     if (id !== requestId) return;
     data = next;
+    reportError='';
+    dataSnapshot={local:next.collector,remotes:next.remotes,prices:next.pricing?.sync};
     $('error').hidden = true;
     $('loading').hidden = true;
     $('content').hidden = false;
     updateControls();
-    render();
+    // Background refreshes must not replace focused settings inputs or remote drafts.
+    if(state.view==='settings' && $('settingsForm')){paintSetupAccount();renderRemoteStatus(next.remotes||[]);paintSaveFeedback();paintDataStatus();}
+    else render();
     $('updated').textContent = '更新于 ' + new Date(data.scanned_at).toLocaleString('zh-CN', {timeZone:data.timezone,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    paintDataStatus();return true;
   } catch (e) {
-    if (e.name !== 'AbortError') { failure('读取失败：' + e.message); $('loading').hidden = true; }
+    if (id===requestId && e.name !== 'AbortError') { reportError=e.message;failure('读取失败：' + e.message); $('loading').hidden = true;paintDataStatus(); }
+    return false;
   } finally { if (id === requestId) $('refresh').disabled = false; }
 }
 function metric(label, value, note, name, accent=false) {
@@ -301,7 +388,7 @@ function pricingSyncPanel() {
   return `<section class="panel price-spacer"><div class="panel-head"><h2>模型价格同步</h2><span class="badge">${sync.busy?'正在查询官方':missing.length?`${missing.length} 个模型待补价`:'已使用模型价格齐全'}</span></div><div class="settings-body"><p>每 24 小时同步已使用模型的官方价格，发现缺价模型时自动查询。</p><dl class="price-sync-grid"><dt>最近定时检查</dt><dd>${esc(time(sync.last_check))}</dd><dt>下次定时同步</dt><dd>${esc(time(sync.next_check))}</dd></dl>${sync.error?`<p role="status">${esc(sync.error)}</p>`:''}${priceFetchMessage?`<p role="status">${esc(priceFetchMessage)}</p>`:''}<p data-help>只展示所有本地及已同步日志中实际使用的模型，不受日期筛选影响。缺价可点击“从官方获取”。官方尚未公布适用价格时仍保留待补价，不猜测单价。手动查询间隔至少 60 秒。自定义单价优先；已有官方价格每 24 小时更新。缺价自动查询失败或官方未公布时，每个模型最多每日自动重试一次。</p></div></section>`;
 }
 function pricingView() {
-  return pricingSyncPanel()+`<div class="notice">${icon('info')}<div><strong>如果同样的 Token 通过 API 使用，会花多少钱？</strong><br>默认按当前 Standard API 单价计算。历史用量也使用此价格快照，不是历史账单重建；Codex 的订阅费、Fast / Ultrafast 加价、地区附加费和工具调用费不包含在内。</div></div><section class="panel"><div class="table-toolbar"><h2>已使用模型单价</h2><span class="badge">USD / 百万 tokens</span></div><div class="table-scroll"><table class="data-table"><thead><tr><th>模型</th><th class="num">未缓存输入</th><th class="num">缓存读取</th><th class="num">缓存写入</th><th class="num">输出</th><th>来源</th></tr></thead><tbody>${Object.entries(data.pricing.models).map(([name,p])=>`<tr><td>${esc(name)}</td>${['input','cached','write','output'].map(k=>`<td class="num">${p[k]==null?'—':esc('$'+p[k])}</td>`).join('')}<td>${(data.pricing.missing_models||[]).includes(name)?`<button class="button small" data-fetch-price="${esc(name)}" ${data.pricing.sync?.busy?'disabled':''}>从官方获取</button><span>${data.pricing.sync?.missing?.includes(name) && data.pricing.sync?.last_success && !data.pricing.sync?.busy && !data.pricing.sync?.error?' 官方暂无适用单价':' 待补价'}</span>`:data.pricing.overrides.includes(name)?'<span class="badge neutral">自定义</span>':`<a href="https://developers.openai.com/api/docs/models/${encodeURIComponent(name)}" target="_blank" rel="noreferrer">官方 ↗</a>`}</td></tr>`).join('')}</tbody></table></div><div class="formula">等价 USD =（未缓存输入 × 输入价 + 缓存读取 × 缓存价 + 缓存写入 × 写入价 + 输出 × 输出价）/ 1,000,000</div><div class="price-source">官方价格核对于 ${data.pricing.verified_at} · <a href="${esc(data.pricing.source)}" target="_blank" rel="noreferrer">查看官方价目表 ↗</a><br>长上下文按官方对应档位计价，按日志中的单次请求长度判断；完整档位可打开官方价目表查看。仅查询缺失价格，自定义价格保持优先。</div></section><section class="panel price-spacer"><div class="panel-head"><h2>添加或覆盖模型单价</h2></div><div class="settings-body"><p data-help class="subtle">保存后立即重算历史用量；单价仅保存在本机。长上下文阈值留空表示不启用倍率。</p><form id="priceForm" class="price-form"><label class="model-field"><span>模型名称</span><input name="name" required placeholder="例如 gpt-6.1-sol" list="priceModels"></label><datalist id="priceModels">${data.options.models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${[['input','输入价'],['cached','缓存读取价'],['write','缓存写入价'],['output','输出价']].map(([key,label])=>`<label><span>${label}</span><input name="${key}" type="number" min="0" step="any" required placeholder="$/M"></label>`).join('')}<label><span>长上下文阈值</span><input name="long_context" type="number" min="1" step="1" placeholder="272000"></label><button class="button primary" type="submit">保存价格</button></form>${data.pricing.overrides.length?`<div class="inset-note" data-help-keep>自定义模型：${data.pricing.overrides.map(name=>`<button class="text-button" data-reset-price="${esc(name)}">${esc(name)} · 恢复默认</button>`).join('')}</div>`:''}</div></section>`;
+  return pricingSyncPanel()+`<div class="notice">${icon('info')}<div><strong>如果同样的 Token 通过 API 使用，会花多少钱？</strong><br>默认按当前 Standard API 单价计算。历史用量也使用此价格快照，不是历史账单重建；Codex 的订阅费、Fast / Ultrafast 加价、地区附加费和工具调用费不包含在内。</div></div><section class="panel"><div class="table-toolbar"><h2>已使用模型单价</h2><span class="badge">USD / 百万 tokens</span></div><div class="table-scroll"><table class="data-table"><thead><tr><th>模型</th><th class="num">未缓存输入</th><th class="num">缓存读取</th><th class="num">缓存写入</th><th class="num">输出</th><th>来源</th></tr></thead><tbody>${Object.entries(data.pricing.models).map(([name,p])=>`<tr><td>${esc(name)}</td>${['input','cached','write','output'].map(k=>`<td class="num">${p[k]==null?'—':esc('$'+p[k])}</td>`).join('')}<td>${(data.pricing.missing_models||[]).includes(name)?`<button class="button small" data-fetch-price="${esc(name)}" ${data.pricing.sync?.busy?'disabled':''}>从官方获取</button><span>${data.pricing.sync?.unresolved?.includes(name) && data.pricing.sync?.last_success && !data.pricing.sync?.busy && !data.pricing.sync?.error?' 官方暂无适用单价':' 待补价'}</span>`:data.pricing.overrides.includes(name)?'<span class="badge neutral">自定义</span>':`<a href="https://developers.openai.com/api/docs/models/${encodeURIComponent(name)}" target="_blank" rel="noreferrer">官方 ↗</a>`}</td></tr>`).join('')}</tbody></table></div><div class="formula">等价 USD =（未缓存输入 × 输入价 + 缓存读取 × 缓存价 + 缓存写入 × 写入价 + 输出 × 输出价）/ 1,000,000</div><div class="price-source">官方价格核对于 ${data.pricing.verified_at} · <a href="${esc(data.pricing.source)}" target="_blank" rel="noreferrer">查看官方价目表 ↗</a><br>长上下文按官方对应档位计价，按日志中的单次请求长度判断；完整档位可打开官方价目表查看。仅查询缺失价格，自定义价格保持优先。</div></section><section class="panel price-spacer"><div class="panel-head"><h2>添加或覆盖模型单价</h2></div><div class="settings-body"><p data-help class="subtle">保存后立即重算历史用量；单价仅保存在本机。长上下文阈值留空表示不启用倍率。</p><form id="priceForm" class="price-form"><label class="model-field"><span>模型名称</span><input name="name" required placeholder="例如 gpt-6.1-sol" list="priceModels"></label><datalist id="priceModels">${data.options.models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>${[['input','输入价'],['cached','缓存读取价'],['write','缓存写入价'],['output','输出价']].map(([key,label])=>`<label><span>${label}</span><input name="${key}" type="number" min="0" step="any" required placeholder="$/M"></label>`).join('')}<label><span>长上下文阈值</span><input name="long_context" type="number" min="1" step="1" placeholder="272000"></label><button class="button primary" type="submit">保存价格</button></form>${data.pricing.overrides.length?`<div class="inset-note" data-help-keep>自定义模型：${data.pricing.overrides.map(name=>`<button class="text-button" data-reset-price="${esc(name)}">${esc(name)} · 恢复默认</button>`).join('')}</div>`:''}</div></section>`;
 }
 let backgroundStatus=null,backgroundBusy=false,backgroundReading=false,backgroundError='';
 function backgroundPanel(){
@@ -333,23 +420,40 @@ document.addEventListener('input',event=>{if(event.target.id==='sourcePaths' && 
 function setupPanel() {
   const setup=settings.setup;
   const sourceReady=setup?.sources?.some(row=>row.status==='ready');
-  const checkup=setup?`<div class="settings-body setup-checkup"><strong>${setup.first_run?'首次配置：先确认日志，再选择是否连接额度':'当前配置检查'}</strong><div class="setup-checks"><span>${sourceReady?'日志目录已识别':'日志目录待检查'}</span><span>${data?.summary?.events?'当前筛选中已读到用量':'当前筛选中没有用量事件'}</span><span>${setup.cli_available?'已找到额度连接程序':'未找到额度连接程序'}</span></div><div>${sourceReady?'目录识别通过；实际 Token 以项目和会话页面为准。':'请在下方选择 Codex 主目录，检查后保存。没有日志时也可先保存配置。'}</div><details><summary>运行位置与配置</summary><dl class="definition"><dt>运行环境</dt><dd>${esc(setup.system)}</dd><dt>访问地址</dt><dd>${esc(setup.url)}</dd><dt>应用数据目录</dt><dd><code>${esc(setup.data_dir)}</code></dd></dl><div>日志、登录和网络均来自运行后台的系统用户。远程环境与当前浏览器所在电脑可能不同。</div></details></div>`:'';
+  const checkup=setup?`<div class="settings-body setup-checkup"><strong>${setup.first_run?'首次配置：先确认日志，再选择是否连接额度':'当前配置检查'}</strong><div class="setup-checks"><span class="setup-status ${sourceReady?'ready':'pending'}"><i aria-hidden="true">${sourceReady?roundedIcon('check'):'!'}</i>${sourceReady?'日志目录已识别':'日志目录待检查'}</span><span class="setup-status ${data?.summary?.events?'ready':'pending'}"><i aria-hidden="true">${data?.summary?.events?roundedIcon('check'):'!'}</i>${data?.summary?.events?'当前筛选中已读到用量':'当前筛选中没有用量事件'}</span><span class="setup-status ${setup.cli_available?'ready':'pending'}"><i aria-hidden="true">${setup.cli_available?roundedIcon('check'):'!'}</i>${setup.cli_available?'已找到额度连接程序':'未找到额度连接程序'}</span></div><div>${sourceReady?'目录识别通过；实际 Token 以项目和会话页面为准。':'请在下方选择 Codex 主目录，检查后保存。没有日志时也可先保存配置。'}</div><details><summary>运行位置与配置</summary><dl class="definition"><dt>运行环境</dt><dd>${esc(setup.system)}</dd><dt>访问地址</dt><dd>${esc(setup.url)}</dd><dt>应用数据目录</dt><dd><code>${esc(setup.data_dir)}</code></dd></dl><div>日志、登录和网络均来自运行后台的系统用户。远程环境与当前浏览器所在电脑可能不同。</div></details></div>`:'';
   return `<section class="panel setup-panel"><div class="panel-head"><h2>开始使用</h2></div>${checkup}<div class="settings-body setup-grid"><div><h3>项目与会话 Token</h3><div>读取本机日志，无需连接账号。请在下方检查 Codex 数据目录。</div><button class="button" data-setup-source>检查日志目录</button></div><div><h3>账号额度</h3><div id="setupAccountStatus" role="status"></div><div class="setup-actions"><button class="button" data-browser-login>浏览器登录</button><button class="button" data-refresh-quota>重新连接额度</button></div><div id="browserLoginStatus" role="status"></div><details><summary>连接步骤与常见问题</summary><ol><li>在运行看板的同一系统用户下，打开 Codex 并登录 ChatGPT 账号。</li><li>终端运行 <code>codex login status</code> 检查登录；未登录时运行 <code>codex login</code>，完成浏览器登录。</li><li>回到这里重新连接。浏览器登录 ChatGPT 不等于本机 Codex 已登录。</li></ol><div>未找到程序时，将 CODEX_USAGE_CLI 设为原生 Codex 程序的绝对路径并重启后台；Windows 使用 codex.exe，不使用 cmd 或 bat 包装脚本。</div><div>额度连接使用后台进程的账号环境；更改日志目录不会切换账号。无需向看板填写密码或 API Key。</div></details></div><div><h3>其他机器的用量</h3><div>在下方远程服务器中添加已有的 SSH 别名。先确认免密登录和远程 Python 可用。</div><div>SSH 只汇总日志，不连接远程账号额度。</div><button class="button" data-setup-remote>管理服务器</button></div></div></section>`;
 }
+let loginWindow=null;
 async function beginBrowserLogin(cancel=false) {
+  const login=accountData?.browser_login;
+  if(!cancel && login?.status==='waiting' && login.url){
+    try{
+      const url=new URL(login.url);
+      if(url.protocol==='https:' && url.hostname==='auth.openai.com' && !url.username && !url.password){
+        window.open(url.href,'_blank','noopener,noreferrer');return;
+      }
+    }catch(_){}
+  }
+  if(cancel){if(loginWindow && !loginWindow.closed)loginWindow.close();loginWindow=null;}
+  else if(!loginWindow || loginWindow.closed){loginWindow=window.open('about:blank','_blank');if(loginWindow){loginWindow.opener=null;loginWindow.document.title='Codex Usage';loginWindow.document.body.textContent='正在准备登录…';}}
   const host=$('browserLoginStatus');
   if(host)host.textContent='正在准备登录…';
   try {
     const result=await api(cancel?'/api/account/login/cancel':'/api/account/login',{method:'POST',headers:{'X-CSRF-Token':settings.csrf}});
-    accountData={...(accountData||{}),browser_login:result};paintSetupAccount();refreshAccount();
-  } catch(error){if(host)host.textContent=error.message;}
+    accountData={...(accountData||{}),browser_login:result};renderAccount();refreshAccount();
+  } catch(error){if(loginWindow && !loginWindow.closed)loginWindow.close();loginWindow=null;if(host)host.textContent=error.message;notify(error.message);}
 }
 function paintBrowserLogin() {
-  const host=$('browserLoginStatus');if(!host)return;
   const login=accountData?.browser_login||{status:'idle'};
+  if(loginWindow && !loginWindow.closed){
+    if(login.status==='waiting' && login.url){
+      try{const url=new URL(login.url);if(url.protocol==='https:' && url.hostname==='auth.openai.com' && !url.username && !url.password){loginWindow.location.replace(url.href);loginWindow=null;}}catch(_){}
+    }else if(['failed','expired','cancelled'].includes(login.status)){loginWindow.close();loginWindow=null;}
+  }
+  const host=$('browserLoginStatus');if(!host)return;
   const labels={starting:'正在准备官方登录链接…',waiting:'在浏览器完成官方登录后，额度会自动刷新。',success:'登录已完成，正在按新登录状态读取额度。',failed:'未能完成登录。请检查 Codex 安装、网络或本机登录回调端口，然后重试；原有连接方式仍可使用。',expired:'登录等待已超时，请重新发起。',cancelled:'已取消本次登录。'};
   const active=['starting','waiting'].includes(login.status);
-  const button=document.querySelector('[data-browser-login]');if(button)button.disabled=active;
+  const button=document.querySelector('[data-browser-login]');if(button){button.disabled=login.status==='starting';button.textContent=login.status==='starting'?'正在准备登录…':login.status==='waiting'?'继续浏览器登录':'浏览器登录';}
   const signature=JSON.stringify(login);if(host.dataset.state===signature)return;host.dataset.state=signature;
   host.replaceChildren();
   const message=document.createElement('div');message.textContent=labels[login.status]||'通过官方页面登录，无需复制 Session；这会更新本机 Codex 的登录账号。';host.append(message);
@@ -367,12 +471,14 @@ function paintSetupAccount() {
   paintIdentity();
   const q=accountData, kind=q?.problem?.kind;
   const guidance={signed_out:'登录已失效，请在本机 Codex 重新登录后重试。',unavailable:'未能读取额度，请展开连接步骤检查 Codex 程序与版本。',unsupported:'请更新 Codex 后重启后台，再重新连接。',timeout:'额度请求超时，请检查后台进程使用的网络或代理后重试。',routing_timeout:'账号服务暂时不可达，看板会自动重试。',offline:'账号服务暂时不可达，看板会自动重试。',connection_lost:'连接已中断，请重新连接额度。'};
-  host.textContent=q?.busy?'正在连接额度…':q?.problem?guidance[kind]||q.problem.message:q?.transportError?q.transportError:q?.fetched_at?(q.stale?'等待更新；上次成功：':'额度已连接；上次成功：')+accountTime(q.fetched_at):'等待首次额度读取，可点击重新连接。';
+  host.textContent=q?.signed_out?'请登录后查看额度和重置卡，本地日志仍可使用。':q?.busy?'正在连接额度…':q?.problem?guidance[kind]||q.problem.message:q?.transportError?q.transportError:q?.fetched_at?(q.stale?'等待更新；上次成功：':'额度已连接；上次成功：')+accountTime(q.fetched_at):'等待首次额度读取，可点击重新连接。';
 }
 function paintIdentity() {
   const profile=accountData?.profile;
-  $('sidebarAccount').textContent=profile?.label || accountData?.account?.label || 'Codex 账号';
-  $('accountAvatar').textContent=settings?.avatar_initials || 'CU';
+  $('sidebarAccount').textContent=accountData?.signed_out?'未登录':profile?.label || accountData?.account?.label || 'Codex 账号';
+  const signedIn=accountData && !accountData.signed_out && accountData.problem?.kind!=='signed_out' && (accountData.account || accountData.browser_login?.status==='success');
+  $('accountAvatar').textContent=signedIn?(settings?.avatar_initials || 'CU'):'';
+  $('accountAvatar').classList.toggle('account-avatar-default',!signedIn);
 }
 let sourceBrowseId=0;
 async function openSourcePicker() {
@@ -418,7 +524,53 @@ async function browseSource(path) {
 function settingsView() {
   const c=data.coverage;
   const warningLabels={invalid_records:'格式无效的记录',partial_lines:'尚未写完的行（下次刷新重试）',counter_resets:'累计计数重置（使用最后一次用量）',unobserved_prefixes:'缺少起始历史的日志（仅计可确认用量）',last_only_events:'仅有单次用量的事件',inconsistent_counts:'不一致的缓存计数',orphan_forks:'缺少父会话的分支'};
-  return setupPanel()+`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>数据来源</h2><span class="badge">本机只读</span></div><form class="settings-body" id="settingsForm"><div class="field"><label for="sourcePaths">Codex 数据目录</label><div class="source-path-control"><textarea id="sourcePaths" rows="1" wrap="off" required spellcheck="false" placeholder="C:\\Users\\you\\.codex / /home/you/.codex">${esc(settings.sources.join('\n'))}</textarea><button type="button" class="button source-picker-open" data-pick-source>选择文件夹</button></div>${settings.setup?`<button type="button" class="text-button" data-default-source>使用检测到的默认目录</button>`:''}<div class="source-path-example"><span>路径示例：</span><span>Windows: <code>C:\\Users\\you\\.codex</code></span><span>macOS: <code>/Users/you/.codex</code></span><span>Linux: <code>/home/you/.codex</code></span></div><p>每行一个绝对路径，指向含 sessions 或 archived_sessions 的 Codex 主目录。可添加从其他机器复制的目录；相同会话事件会去重。</p></div><label class="field"><span>统计时区</span><select id="settingsTimezone">${[...new Set([settings.timezone,'America/Los_Angeles','Asia/Shanghai','Asia/Tokyo','Europe/London','UTC'])].map(z=>`<option ${z===settings.timezone?'selected':''}>${esc(z)}</option>`).join('')}</select><button class="text-button" type="button" data-local-timezone>使用浏览器所在时区</button><p>按所选时区划分日期；每周从周一开始，自动处理夏令时。</p></label><div class="field"><label for="settingsAvatar">头像文字</label><input id="settingsAvatar" aria-label="自定义头像文字" maxlength="3" pattern="[A-Za-z0-9\\u3400-\\u9fff]{1,3}" required value="${esc(settings.avatar_initials || 'CU')}" autocomplete="off"><p>自定义头像文字，支持一至三个英文字母、数字或汉字。保存后生效。</p></div><label class="field"><span>统计起始日期</span><input id="settingsUsageSince" type="date" value="${esc(settings.usage_since || '')}"><p>从所选时区当天 00:00 起计算所有用量与 API 等价成本，包含本机和远程服务器。更早的记录不计入；留空恢复全部历史。</p></label><div class="setup-actions"><button class="button" type="button" data-check-sources>检查目录（不保存）</button><button class="button primary" type="submit">${settings.setup?.first_run?'保存并开始使用':'保存并重新读取'}</button></div><div id="sourceCheckResult" role="status" aria-live="polite"></div><p class="inset-note">日志索引仅保存用量、会话标题、路径与额度快照。实时额度由 Codex 通过当前登录读取；本程序不读取或保存登录凭据。</p></form></section><section class="panel"><div class="panel-head"><h2>数据覆盖情况</h2></div><div class="settings-body"><dl class="definition"><dt>已知会话元数据</dt><dd>${c.metadata_sessions}</dd><dt>已统计日志会话</dt><dd>${c.sessions}</dd><dt>可读日志文件</dt><dd>${c.files}</dd><dt>缺少日志的已知会话</dt><dd>${c.missing_sessions}</dd><dt>源文件消失后保留的缓存</dt><dd>${c.retained_files}</dd><dt>最近扫描耗时</dt><dd>${c.scan_ms} ms</dd></dl><div class="help-copy"><p>这份看板代表<strong>配置目录中的可观测用量</strong>。没有日志的远程会话、云端会话和已删除历史不会自动补齐；元数据计数也不一定覆盖所有账号活动。</p><p>只有账号标记可用时才能区分本地账号分组。来源不明的历史会单列为“未标记账号”。</p><p>项目按工作目录归属；可访问的 Git 子目录和 worktree 会尽量合并回主仓库。</p></div>${Object.keys(c.warnings).length||c.issues.length?`<ul class="info-list">${Object.entries(c.warnings).map(([k,v])=>`<li>${esc(warningLabels[k]||k)}：${v}</li>`).join('')}${c.issues.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}</div></section></div><section class="panel price-spacer"><div class="settings-body help-copy"><h3>开源基础与定制</h3><p>基于 MIT 开源项目 <a href="https://github.com/physcom/claude-usage-dashboard" target="_blank" rel="noreferrer">physcom/claude-usage-dashboard</a> 定制。保留本地服务、缓存和启动方式，新增 Codex 原生日志解析、精确时区分桶、中文界面、价格覆盖与多目录合并。上游许可证随源码保留。</p></div></section>`;
+  return appearanceView()+setupPanel()+`<div class="settings-grid"><section class="panel"><div class="panel-head"><h2>数据来源</h2><span class="badge">本机只读</span></div><form class="settings-body" id="settingsForm"><div class="field"><label for="sourcePaths">Codex 数据目录</label><div class="source-path-control"><textarea id="sourcePaths" rows="1" wrap="off" required spellcheck="false" placeholder="C:\\Users\\you\\.codex / /home/you/.codex">${esc(settings.sources.join('\n'))}</textarea><button type="button" class="button source-picker-open source-action" data-pick-source aria-label="选择文件夹" title="选择文件夹">${sourceActionIcon('folder')}</button>${settings.setup?`<button type="button" class="button source-action" data-default-source aria-label="自动检测日志目录" title="自动检测日志目录">${sourceActionIcon('detect')}</button>`:''}<button class="button source-action" type="button" data-check-sources aria-label="检查日志目录（不保存）" title="检查日志目录（不保存）">${sourceActionIcon('check')}</button></div><div id="sourceCheckResult" role="status" aria-live="polite"></div><div class="source-path-example"><span>路径示例：</span><span>Windows: <code>C:\\Users\\you\\.codex</code></span><span>macOS: <code>/Users/you/.codex</code></span><span>Linux: <code>/home/you/.codex</code></span></div><p>每行一个绝对路径，指向含 sessions 或 archived_sessions 的 Codex 主目录。可添加从其他机器复制的目录；相同会话事件会去重。</p></div><label class="field"><span>统计时区</span><select id="settingsTimezone"><option value="system" ${settings.timezone_mode==='system'?'selected':''}>跟随系统</option>${[...new Set([settings.timezone,'America/Los_Angeles','Asia/Shanghai','Asia/Tokyo','Europe/London','UTC'])].map(z=>`<option ${settings.timezone_mode!=='system'&&z===settings.timezone?'selected':''}>${esc(z)}</option>`).join('')}</select><p>按所选时区划分日期；每周从周一开始，自动处理夏令时。</p></label><label class="field"><span>统计起始日期</span><input id="settingsUsageSince" type="date" value="${esc(settings.usage_since || '')}"><p>从所选时区当天 00:00 起计算所有用量与 API 等价成本，包含本机和远程服务器。更早的记录不计入；留空恢复全部历史。</p></label><p class="inset-note">日志索引仅保存用量、会话标题、路径与额度快照。实时额度由 Codex 通过当前登录读取；本程序不读取或保存登录凭据。</p></form></section><section class="panel"><div class="panel-head"><h2>数据覆盖情况</h2></div><div class="settings-body"><dl class="definition"><dt>已知会话元数据</dt><dd>${c.metadata_sessions}</dd><dt>已统计日志会话</dt><dd>${c.sessions}</dd><dt>可读日志文件</dt><dd>${c.files}</dd><dt>缺少日志的已知会话</dt><dd>${c.missing_sessions}</dd><dt>源文件消失后保留的缓存</dt><dd>${c.retained_files}</dd><dt>最近扫描耗时</dt><dd>${c.scan_ms} ms</dd></dl><div class="help-copy"><p>这份看板代表<strong>配置目录中的可观测用量</strong>。没有日志的远程会话、云端会话和已删除历史不会自动补齐；元数据计数也不一定覆盖所有账号活动。</p><p>只有账号标记可用时才能区分本地账号分组。来源不明的历史会单列为“未标记账号”。</p><p>项目按工作目录归属；可访问的 Git 子目录和 worktree 会尽量合并回主仓库。</p></div>${Object.keys(c.warnings).length||c.issues.length?`<ul class="info-list">${Object.entries(c.warnings).map(([k,v])=>`<li>${esc(warningLabels[k]||k)}：${v}</li>`).join('')}${c.issues.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}</div></section></div><section class="panel price-spacer"><div class="settings-body help-copy"><h3>开源基础与定制</h3><p>基于 MIT 开源项目 <a href="https://github.com/physcom/claude-usage-dashboard" target="_blank" rel="noreferrer">physcom/claude-usage-dashboard</a> 定制。保留本地服务、缓存和启动方式，新增 Codex 原生日志解析、精确时区分桶、中文界面、价格覆盖与多目录合并。上游许可证随源码保留。</p></div></section>`;
+}
+function parkPreferenceControls(){
+  let parking=$('preferenceControlParking');if(!parking){parking=document.createElement('div');parking.id='preferenceControlParking';parking.hidden=true;document.body.append(parking);}
+  for(const id of ['language','filterButton','filterPopover']){const control=$(id);if(control)parking.append(control);}
+}
+let settingsReturnView='overview',settingsReturnTab='summary';
+let settingsSection='start';
+try{settingsSection=localStorage.getItem('codex-usage-settings-section')||'start';}catch(_){}
+function selectSettingsSection(section){
+  if(section==='scope'||section==='remote')section='data';
+  const shell=document.querySelector('.settings-shell');if(!shell)return;
+  if(!shell.querySelector(`[data-settings-page="${section}"]`))section='start';
+  settingsSection=section;
+  shell.querySelectorAll('[data-settings-page]').forEach(page=>page.hidden=page.dataset.settingsPage!==section);
+  document.querySelectorAll('[data-settings-section]').forEach(button=>{const active=button.dataset.settingsSection===section;button.classList.toggle('active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
+  try{localStorage.setItem('codex-usage-settings-section',section);}catch(_){}
+}
+let aboutVersion=null,aboutVersionPending=false;
+function aboutView(){
+  const repo='https://github.com/KJesko/codex-usage';
+  const link=(url,title,description)=>`<a class="about-link" href="${url}" target="_blank" rel="noopener noreferrer"><strong>${title}<span aria-hidden="true">↗</span></strong><span>${description}</span></a>`;
+  return `<div class="settings-body about-content"><div class="about-hero"><span class="about-logo" aria-hidden="true">&gt;_</span><div><h2>Codex Usage</h2><p>本地运行的 Codex 用量看板</p></div><span class="badge" data-about-version>${aboutVersion?'v'+esc(aboutVersion):'正在读取版本…'}</span></div><div class="about-tags"><span>中文 / English</span><span>本地隐私</span><span>多机器汇总</span></div>
+  <div class="about-author"><span>开发与维护</span><a href="https://github.com/KJesko" target="_blank" rel="noopener noreferrer">KJesko ↗</a><p>按项目、会话和模型查看用量与参考成本，跟踪账号额度与重置，通过 SSH 汇总多台机器。</p></div>
+  <div class="about-links">${link(repo,'开源仓库','查看源代码、参与贡献')}${link(repo+'/releases','版本与更新','下载发布版本、查看更新说明')}${link(repo+'/issues','问题反馈','报告问题或提出功能建议')}${link(repo+'/blob/main/docs/SETUP.md','安装与使用','配置账号、日志目录和后台服务')}${link('https://kjesko.github.io/codex-usage/','在线演示','使用模拟数据体验功能')}${link(repo+'/blob/main/SECURITY.md','安全与隐私','了解数据边界与安全反馈方式')}</div>
+  <div class="about-note"><h3>反馈前准备</h3><p>请附上当前版本、操作系统、复现步骤和脱敏截图。不要提交登录凭据、密钥或包含隐私的完整日志。</p></div>
+  <div class="about-credits"><h3>开源基础与致谢</h3><p>基于 <a href="https://github.com/physcom/claude-usage-dashboard" target="_blank" rel="noopener noreferrer">physcom/claude-usage-dashboard</a> 定制，采用 <a href="${repo}/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>。保留上游开源声明，详见 <a href="${repo}/blob/main/NOTICE" target="_blank" rel="noopener noreferrer">NOTICE</a>。</p><p>独立社区项目，与 OpenAI 无隶属关系。API 等价成本仅供参考，不是订阅账单。</p></div></div>`;
+}
+async function readAboutVersion(){
+  if(aboutVersion||aboutVersionPending)return;
+  aboutVersionPending=true;
+  try{const result=await api('/api/health');aboutVersion=result.version||null;document.querySelectorAll('[data-about-version]').forEach(el=>el.textContent=aboutVersion?'v'+aboutVersion:'版本未知');}
+  catch(_){document.querySelectorAll('[data-about-version]').forEach(el=>el.textContent='版本暂不可用');}
+  finally{aboutVersionPending=false;}
+}
+function mountSettingsNavigation(){
+  const content=$('content'),grid=content.querySelector('.settings-grid');
+  const scope=document.createElement('section');scope.className='panel scope-settings';scope.innerHTML='<div class="panel-head"><h2>统计范围</h2></div><div class="settings-body"><p>选择统计时间、机器、项目、模型和账号，应用到用量分析页面。</p><div id="settingsFilterSlot"></div></div>';content.append(scope);
+  const groups=[['start','开始使用',content.querySelector('.setup-panel')],['appearance','外观与偏好',content.querySelector('.appearance-panel')],['data','数据来源',$('settingsForm')?.closest('section')],['coverage','数据覆盖情况',grid?.children[1]],['background','后台服务',$('backgroundStatus')?.closest('section')],['about','关于',content.querySelector('.settings-grid + section')]];
+  const about=groups.find(([key])=>key==='about')[2];if(about)about.innerHTML=aboutView();readAboutVersion();
+  const dataGroup=document.createElement('div');dataGroup.className='data-settings-group';dataGroup.append(groups.find(([key])=>key==='data')[2],scope);const remote=content.querySelector('.remote-panel');if(remote)dataGroup.append(remote);groups.find(([key])=>key==='data')[2]=dataGroup;
+  const shell=document.createElement('div');shell.className='settings-shell';
+  const nav=document.createElement('nav');nav.className='settings-navigation';nav.setAttribute('aria-label','设置分类');
+  nav.innerHTML='<button type="button" class="settings-back" data-settings-back>← 返回</button><h2>设置</h2>'+ groups.map(([key,label])=>`<button type="button" data-settings-section="${key}">${label}</button>`).join('');
+  const pages=document.createElement('div');pages.className='settings-pages';
+  for(const [key,,panel] of groups){if(panel){panel.dataset.settingsPage=key;pages.append(panel);}}
+  document.querySelector('.sidebar .settings-navigation')?.remove();document.querySelector('.sidebar').prepend(nav);shell.append(pages);content.replaceChildren(shell);$('filterPopover').removeAttribute('popover');$('filterPopover').classList.add('filter-inline');$('settingsFilterSlot').append($('filterPopover'));if(!filterDraft)filterDraft={...state,since:state.since||data?.range.since||settings?.usage_since||offsetDate(dateInZone(),-29),until:state.until||data?.range.until||dateInZone()};updateFilterControls();selectSettingsSection(settingsSection);
 }
 function render() {
   const search=$('sessionSearch');
@@ -440,6 +592,7 @@ function render() {
   ModelCharts.release();
   ActivityHeatmap.release();
   ProjectTreemap.release();
+  parkPreferenceControls();
   $('content').innerHTML=(!data?.coverage?.files && !data?.summary?.events && state.view==='overview'?`<section class="panel setup-panel"><div class="settings-body"><h2>先接入用量数据</h2><div>尚未读到本地日志。配置 Codex 数据目录即可查看项目和会话 Token，额度连接可以稍后完成。</div><button class="button primary" data-view="settings">配置数据来源</button></div></section>`:'')+html;
   if (state.view==='overview' && state.tab==='summary') { ActivityHeatmap.mount($('tokenActivity'),data); }
   if (state.view==='overview' && state.tab==='analysis') { mountChart($('trendChart'),data.timeline,state.metric);UsageInsights.drawComparison(data); }
@@ -454,13 +607,17 @@ function render() {
       $('sessionSearch').setSelectionRange(searchSelection.start,searchSelection.end,searchSelection.direction);
     }
   }
-  if(state.view==='settings'){$('content').insertAdjacentHTML('beforeend',backgroundPanel());paintSetupAccount();paintBackground();readBackground();}
+  if(state.view==='settings'){$('content').insertAdjacentHTML('beforeend',backgroundPanel());paintSetupAccount();paintBackground();readBackground();mountSettingsNavigation();}
   CompactTables.mount($('content'));
+  for(const [id,value] of Object.entries(settingsAutosave.drafts())){if($(id))$(id).value=value;}
+  paintSaveFeedback();paintDataStatus();
 }
 function setView(view, tab='summary') {
+  if(view==='settings' && state.view!=='settings'){settingsReturnView=state.view;settingsReturnTab=state.tab;}
   if($('filterPopover').matches(':popover-open'))$('filterPopover').hidePopover();
   // The project index is the way out of a single project's session drill-down.
   if (view === 'projects') { state.project = ''; state.page = 1; }
+  if(view!=='settings')filterDraft=null;
   state.view=view;if(view==='overview')state.tab=tab;
   updateControls(); syncURL(true); render(); window.scrollTo({top:0,behavior:'instant'});
   if(view!=='quota' && (view!=='settings' || !data))load();
@@ -532,10 +689,14 @@ function drawProjectChart() {
   mountChart($('projectChart'),projectDetailReport.timeline,projectDetailMetric);
 }
 async function saveSettings(next) {
-  await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':settings.csrf},body:JSON.stringify(next)});
-  settings=await api('/api/settings');
+  const patch=Object.fromEntries(Object.entries(next).filter(([key,value])=>!['csrf','setup'].includes(key)&&JSON.stringify(value)!==JSON.stringify(settings[key])));
+  if(Object.keys(patch).length)await persistSettingsPatch(patch);
   renderAccount();
   await load(true);
+}
+function persistSettingsPatch(patch){
+  const save=()=>api('/api/settings/patch',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':settings.csrf},body:JSON.stringify(patch)}).then(current=>{settings={...settings,...current};});
+  const result=settingsWrite.then(save);settingsWrite=result.catch(()=>{});return result;
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button,[data-project],[data-project-detail],[data-session]'); if(!b) return;
@@ -543,9 +704,22 @@ document.addEventListener('click',async e=>{
   if(b.dataset.defaultSource!==undefined && settings.setup){$('sourcePaths').value=settings.setup.default_source;$('sourcePaths').dispatchEvent(new Event('input',{bubbles:true}));$('sourcePaths').focus();}
   if(b.dataset.localTimezone!==undefined){const zone=Intl.DateTimeFormat().resolvedOptions().timeZone,select=$('settingsTimezone');if(zone){if(![...select.options].some(o=>o.value===zone))select.add(new Option(zone,zone));select.value=zone;}}
   if(b.dataset.browserLogin!==undefined)beginBrowserLogin();
+  if(b.dataset.cancelAccountLogin!==undefined)beginBrowserLogin(true);
+  if(b.dataset.accountLogin!==undefined)beginBrowserLogin();
+  if(b.dataset.accountLogout!==undefined){$('logoutError').textContent='';$('logoutDialog').showModal();}
+  if(b.dataset.cancelLogout!==undefined)$('logoutDialog').close();
+  if(b.dataset.confirmLogout!==undefined){
+    const dialog=$('logoutDialog');
+    if(dialog.dataset.busy==='true')return;
+    dialog.dataset.busy='true';dialog.querySelectorAll('button').forEach(button=>button.disabled=true);
+    accountGeneration++;
+    try{accountData=await api('/api/account/logout',{method:'POST',headers:{'X-CSRF-Token':settings.csrf}});renderAccount();dialog.close();}
+    catch(error){$('logoutError').textContent=error.message;}
+    finally{dialog.dataset.busy='false';dialog.querySelectorAll('button').forEach(button=>button.disabled=false);}
+  }
   if(b.dataset.pickSource!==undefined)openSourcePicker();
-  if(b.dataset.setupSource!==undefined){$('sourcePaths')?.focus();$('sourcePaths')?.scrollIntoView({block:'center'});}
-  if(b.dataset.setupRemote!==undefined){const field=$('remoteForm')?.querySelector('[name=host]');field?.focus();field?.scrollIntoView({block:'center'});}
+  if(b.dataset.setupSource!==undefined){selectSettingsSection('data');$('sourcePaths')?.focus();$('sourcePaths')?.scrollIntoView({block:'center'});}
+  if(b.dataset.setupRemote!==undefined){selectSettingsSection('remote');const field=$('remoteForm')?.querySelector('[name=host]');field?.focus();field?.scrollIntoView({block:'center'});}
   if(b.dataset.parentSource!==undefined){const input=$('sourcePaths');input.value=input.value.split('\n').map(path=>path.trim()===b.dataset.parentSource?b.dataset.suggestedSource:path).join('\n');input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();}
   if(b.dataset.checkSources!==undefined){
     const host=$('sourceCheckResult'), paths=$('sourcePaths').value.split('\n').map(x=>x.trim()).filter(Boolean);
@@ -602,7 +776,7 @@ document.addEventListener('submit',async e=>{
   if(e.target.id==='remoteForm') {
     e.preventDefault();const form=new FormData(e.target),button=e.target.querySelector('button');button.disabled=true;
     const remote={name:form.get('name').trim(),host:form.get('host').trim(),path:form.get('path').trim(),interval:Number(form.get('interval')),enabled:true};
-    try {await saveSettings({...settings,remotes:[...(settings.remotes||[]),remote]});notify('远程服务器已添加，开始同步');}
+    try {await saveSettings({...settings,remotes:[...(settings.remotes||[]),remote]});e.target.reset();button.disabled=false;notify('远程服务器已添加，开始同步');}
     catch(err){failure(err.message);button.disabled=false;}
   }
   if(e.target.id==='filters') {
@@ -611,13 +785,9 @@ document.addEventListener('submit',async e=>{
       $('filterError').textContent='请选择有效的开始和结束日期，结束日期不能早于开始日期。';$('filterError').hidden=false;return;
     }
     for(const key of ['range','source','project','model','account','since','until'])state[key]=filterDraft[key];
-    state.page=1;state.search='';$('filterPopover').hidePopover();filterDraft=null;updateControls();syncURL();load();$('filterButton').focus({preventScroll:true});
+    state.page=1;state.search='';filterDraft=null;updateControls();syncURL();load();
   }
-  if(e.target.id==='settingsForm') {
-    e.preventDefault();const button=e.target.querySelector('button[type=submit]');button.disabled=true;
-    try {await saveSettings({...settings,sources:$('sourcePaths').value.split('\n').map(s=>s.trim()).filter(Boolean),timezone:$('settingsTimezone').value,usage_since:$('settingsUsageSince').value,avatar_initials:$('settingsAvatar').value.trim()});notify('数据设置已保存');}
-    catch(err){failure(err.message);button.disabled=false;}
-  }
+  if(e.target.id==='settingsForm') {e.preventDefault();flushSettingsEdits();}
   if(e.target.id==='priceForm') {
     e.preventDefault();const f=new FormData(e.target), price={};
     for(const k of ['input','cached','write','output']) price[k]=Number(f.get(k));
@@ -656,11 +826,11 @@ $('sessionDialog').addEventListener('click',e=>{if(e.target===$('sessionDialog')
 $('closeProjectDialog').addEventListener('click',()=>$('projectDialog').close());
 $('projectDialog').addEventListener('close',()=>{projectDetailController?.abort();projectDetailReport=null;releaseCharts($('projectDetail'));});
 $('projectDialog').addEventListener('click',e=>{if(e.target===$('projectDialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}});
-$('theme').addEventListener('click',()=>{document.body.classList.toggle('dark');try{localStorage.setItem('codex-usage-theme',document.body.classList.contains('dark')?'dark':'light');}catch(_){} });
+$('theme')?.addEventListener('click',()=>{appearance.mode=document.body.classList.contains('dark')?'light':'dark';saveAppearance();syncModeButtons();});
 $('export').addEventListener('click',()=>{const dimension={overview:'timeline',projects:'projects',sessions:'sessions',models:'models'}[state.view];location.href='/api/export?'+params({dimension,...(state.view==='sessions'?{search:state.search,sort:state.sort}:{})});});
 async function init() {
   if (state.view === 'projects' && state.project) { state.project = ''; syncURL(); }
-  try {settings=await api('/api/settings');if(settings.setup?.first_run && !restored.has('view')){state.view='settings';syncURL();}if(settings.usage_since && !restored.has('range'))state.range='all';updateControls();refreshAccount();await load();}
+  try {settings=await api('/api/settings');if(settings.timezone_mode==='system'){const zone=Intl.DateTimeFormat().resolvedOptions().timeZone;if(zone&&zone!==settings.timezone){await persistSettingsPatch({timezone:zone});}}if(settings.setup?.first_run && !restored.has('view')){state.view='settings';syncURL();}if(settings.usage_since && !restored.has('range'))state.range='all';updateControls();refreshAccount();refreshDataStatus();await load();}
   catch(e){failure('初始化失败：'+e.message);$('loading').hidden=true;}
 }
 document.addEventListener('click',async e=>{
@@ -677,7 +847,7 @@ setInterval(()=>{if(!document.hidden&&state.view==='settings')readBackground();}
 
 init();
 setInterval(()=>{if(!document.hidden && !['settings','pricing','quota'].includes(state.view) && !$('sessionDialog').open && !$('projectDialog').open)load();},30000);
-setInterval(()=>{if(!document.hidden && settings?.remotes?.length)pollRemotes();},3000);
+setInterval(()=>{if(!document.hidden && settings?.remotes?.length && Date.now()>=remotePollAt)pollRemotes();},3000);
 
 function remoteRows(remotes) {
   return remotes.map(r=>`<div class="remote-row"><div><strong>${esc(r.name)}</strong><small>${esc(r.host)} · ${esc(r.root||r.path||'自动发现 Codex 目录')}</small><p>${!r.enabled?'已暂停':r.busy?'正在同步…':r.error?'连接失败，保留上次数据':r.synced_at?'已同步 '+new Date(r.synced_at).toLocaleString('zh-CN',{timeZone:settings.timezone}):'等待首次同步'}${r.synced_at?` · ${r.files} 个日志文件`:''}</p>${r.error?`<p class="remote-error">${esc(r.error)}</p>`:''}</div><div class="remote-actions"><button class="text-button" data-toggle-remote="${esc(r.id)}">${r.enabled?'暂停':'启用'}</button><button class="text-button" data-remove-remote="${esc(r.id)}">移除</button></div></div>`).join('') || '<p class="subtle">还没有远程服务器。添加后可与本机用量一起统计。</p>';
@@ -692,22 +862,27 @@ function renderRemoteStatus(remotes) {
     const status=s.id==='local'?'本地日志':remote?.busy?'同步中':remote?.error?'离线 / 显示上次数据':remote?.synced_at?'上次同步 '+new Date(remote.synced_at).toLocaleTimeString('zh-CN',{timeZone:settings.timezone}):'等待同步';
     return `<span class="badge ${remote?.error?'remote-error':''}">${esc(s.name)} · ${status}</span>`;
   }).join('')+'<button type="button" class="text-button" data-view="settings">管理服务器 →</button>';
-  if($('remoteRows')) $('remoteRows').innerHTML=remoteRows(remotes);
+  if($('remoteRows')) QuotaDOM.patch($('remoteRows'),remoteRows(remotes));
   if($('syncRemotes')) $('syncRemotes').disabled=remotes.some(r=>r.busy)||!active.length;
 }
 async function pollRemotes() {
+  if(remoteReading)return;
+  remoteReading=true;
   try {
     const remotes=await api('/api/remotes');
+    remoteFailures=0;remotePollAt=Date.now()+(remotes.some(row=>row.busy)?3000:15000);
     const previous=(data?.remotes||[]).map(r=>r.synced_at).join('|');
     const current=remotes.map(r=>r.synced_at).join('|');
     if(data)data.remotes=remotes;
+    dataSnapshot={...(dataSnapshot||{}),remotes};
     renderRemoteStatus(remotes);
+    paintDataStatus();
     if(previous!==current) {
       // Avoid replacing settings inputs while someone is editing them.
-      if(state.view==='settings') notify('远程同步完成，切换到项目分析查看');
-      else if(state.view!=='quota' && !$('sessionDialog').open)await load(true);
+      if(!['settings','quota'].includes(state.view) && !$('sessionDialog').open)await load(true);
     }
-  }catch(_){}
+  }catch(error){remotePollAt=Date.now()+Math.min(60000,5000*2**Math.min(++remoteFailures,4));statusError=error.message;paintDataStatus();}
+  finally{remoteReading=false;}
 }
 function remoteSettingsView() {
   return `<section class="panel remote-panel"><div class="panel-head"><div><h2>远程服务器</h2><p data-help>沿用本机已保存的 SSH 连接；无需在服务器安装程序。</p></div><button class="button" id="syncRemotes">立即同步</button></div><div class="settings-body"><div id="remoteRows">${remoteRows(data.remotes||[])}</div><form id="remoteForm" class="price-form"><label><span>名称</span><input name="name" placeholder="例如 开发服务器" maxlength="80"></label><label class="model-field"><span>SSH 连接名称 / 地址</span><input name="host" placeholder="例如 my-server" required></label><label class="model-field"><span>远程 Codex 目录</span><input name="path" placeholder="留空自动发现，或 ~/.codex"></label><label><span>同步间隔（秒）</span><input name="interval" type="number" min="30" max="86400" value="120" required></label><button type="submit" class="button primary">添加服务器</button></form><p class="inset-note">只在服务器内存中提取用量、会话标题、项目目录和额度；不下载对话正文、不读取 auth.json。本地服务运行时自动同步，断线保留上次结果。需要已验证主机的免密 SSH 和远程 Python 3。</p></div></section>`;
@@ -739,6 +914,7 @@ function quotaPaceFocus() {
 }
 function renderQuotaPace(focus=quotaPaceFocus(), opened=null) {
   const host=$('quotaPace');if(!host)return;
+  if(accountData?.signed_out){QuotaTools.display(accountData);QuotaDOM.patch(host,'');return;}
   if(host.dataset.historyScope===accountData?.history_scope && QuotaRange.interacting(host))return;
   // Do not close a native date picker or overwrite a draft on a background poll.
   if(document.activeElement?.matches('#quotaRangeForm input, #quotaRangeForm select') && host.dataset.historyScope===accountData?.history_scope)return;
@@ -763,38 +939,52 @@ function renderQuotaPace(focus=quotaPaceFocus(), opened=null) {
 }
 function renderAccount() {
   const q=accountData;if(!q)return;
+  paintBrowserLogin();
   paintSetupAccount();
-  QuotaTools.render(q);
-  QuotaPage.render(q);
   if(state.view==='quota')$('updated').textContent=q.fetched_at?'额度更新于 '+accountTime(q.fetched_at):'等待首次额度读取';
   const plan=q.account?.plan,planName=plan?String(plan).replace(/\b\w/g,c=>c.toUpperCase()):'';
   paintIdentity();
-  $('sidebarPlan').textContent=planName?`ChatGPT ${planName}`:q.problem?.kind==='signed_out'?'需要登录':q.fetched_at?'套餐信息暂不可用':'暂不可用';
-  const old=q.stale || Boolean(q.transportError),status=q.busy?'正在更新':old?(q.problem||q.transportError?'更新失败':'等待更新'):q.fetched_at?'已连接':'等待连接';
+  $('sidebarPlan').textContent=q.browser_login?.status==='success'&&!q.fetched_at?'正在同步额度':q.signed_out?'点击登录':planName?`ChatGPT ${planName}`:q.problem?.kind==='signed_out'?'需要登录':q.fetched_at?'套餐信息暂不可用':'暂不可用';
+  const old=q.stale || Boolean(q.transportError),status=q.signed_out?'未登录':q.busy?'正在更新':old?(q.problem||q.transportError?'更新失败':'等待更新'):q.fetched_at?'已连接':'等待连接';
   const windows=q.windows || [],prefix=windows.some(w=>w.bucket!=='codex');
   $('accountQuota').classList.toggle('quota-stale',old);
   const zoneLabel=settings?.timezone === 'Asia/Shanghai' ? '北京时间' : settings?.timezone || '';
+  const needsLogin=q.signed_out || q.problem?.kind==='signed_out' || (!q.account && q.browser_login?.status!=='success');
   const refreshFocused = document.activeElement?.id === 'refreshAccount';
   const quotaScroll = $('accountQuota').scrollTop;
-  $('accountQuota').innerHTML=`<div class="account-heading"><h2 id="accountQuotaTitle">${esc(q.profile?.label || '当前 Codex 账号')}</h2><button id="refreshAccount" class="icon-button" aria-label="刷新账号额度" title="刷新账号额度" ${q.busy?'disabled':''}>${icon('refresh')}</button></div><p class="account-footnote">${esc(planName||'套餐未知')} · ${status}</p><button class="button" data-view="quota" popovertarget="accountQuota" popovertargetaction="hide">查看额度与重置 →</button>`;
+  $('accountQuota').innerHTML=`<div class="account-heading"><h2 id="accountQuotaTitle">${esc(needsLogin?'未登录':q.profile?.label || '当前 Codex 账号')}</h2><button id="refreshAccount" class="icon-button" aria-label="刷新账号额度" title="刷新账号额度" ${q.busy?'disabled':''}>${icon('refresh')}</button></div><p class="account-footnote">${esc(planName||'套餐未知')} · ${status}</p><div class="quota-windows">${windows.map(w=>{const remaining=Number.isFinite(w.remaining_percent)?Math.max(0,Math.min(100,w.remaining_percent)):null;return `<div class="quota-window"><div class="quota-topline"><span class="quota-label">${esc(prefix?w.bucket_name+' · '+w.label:w.label)}</span><strong class="quota-value">${remaining==null?'—':number(remaining)+'%'}<span>剩余</span></strong></div><div class="quota-track" ${remaining==null?'':`role="meter" aria-label="${esc(w.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${remaining}"`}><span class="${remaining!=null&&remaining<=20?'low':''}" style="width:${remaining??0}%"></span></div><div class="quota-window-meta"><span>${w.resets_at?'下次重置 '+accountTime(w.resets_at*1000):'重置时间未知'}</span>${old?'<span>上次结果</span>':''}</div></div>`;}).join('')||'<p class="quota-empty">等待首次额度读取</p>'}</div>`;
+  $('accountQuota').innerHTML=needsLogin?`<div class="account-heading"><h2 id="accountQuotaTitle">未登录</h2></div><p>请登录后查看额度和重置卡，本地日志仍可使用。</p><button class="button primary" data-account-login ${q.browser_login?.status==='starting'?'disabled':''}>${q.browser_login?.status==='starting'?'正在准备登录…':q.browser_login?.status==='waiting'?'继续浏览器登录':'登录账号'}</button>${['starting','waiting'].includes(q.browser_login?.status)?'<button class="text-button" data-cancel-account-login>取消登录</button>':''}${['failed','expired'].includes(q.browser_login?.status)?'<p role="status">登录未完成，请重新点击登录账号。</p>':''}`:$('accountQuota').innerHTML+`<div class="account-session-actions"><button class="button" data-view="quota" popovertarget="accountQuota" popovertargetaction="hide">查看额度与重置 →</button><button class="button account-logout" data-account-logout>退出登录</button></div>`;
   $('accountStatus').innerHTML=`<span class="account-state ${old?'is-stale':''}"><i></i>${status}</span><span class="quota-updated" title="${q.fetched_at?'更新于 '+accountTime(q.fetched_at):''}">${q.fetched_at?new Date(q.fetched_at).toLocaleTimeString('zh-CN',{timeZone:settings?.timezone || 'America/Los_Angeles',hour:'2-digit',minute:'2-digit',hour12:false})+' 更新':''}</span>`;
-  if (refreshFocused) $('refreshAccount').focus({preventScroll:true});
+  if (refreshFocused) $('refreshAccount')?.focus({preventScroll:true});
   $('accountQuota').scrollTop = quotaScroll;
   positionQuotaPopover();
-  renderQuotaPace();
+  // Account access must stay usable even if an optional chart/alert script failed to load.
+  if(typeof QuotaTools!=='undefined')QuotaTools.render(q);
+  if(typeof QuotaPage!=='undefined')QuotaPage.render(q);
+  if(typeof QuotaTools!=='undefined' && typeof QuotaRange!=='undefined' && typeof QuotaDOM!=='undefined' && typeof UsageInsights!=='undefined')renderQuotaPace();
 }
 async function refreshAccount(force=false) {
   if(accountPending)return;
   accountPending=true;clearTimeout(accountTimer);
+  const generation=accountGeneration;
   try {
     const response=await sessionFetch(force?'/api/account/refresh':'/api/account',force?{method:'POST',headers:{'X-CSRF-Token':settings.csrf}}:{});
     if(!response.ok)throw new Error('账号连接暂时不可用，请重试。');
-    accountData=await response.json();renderAccount();
+    const next=await response.json();
+    if(generation!==accountGeneration)return;
+    accountData=next;renderAccount();
   } catch(e) {
+    if(generation!==accountGeneration)return;
     accountData={...(accountData || {windows:[]}),busy:false,stale:true,transportError:'无法连接额度服务，请稍后刷新。'};renderAccount();
   } finally {
     accountPending=false;
-    accountTimer=setTimeout(()=>{if(!document.hidden)refreshAccount();},accountData?.busy || ['starting','waiting'].includes(accountData?.browser_login?.status)?1200:15000);
+    paintDataStatus();
+    accountTimer=setTimeout(()=>{
+      // Opening the login tab hides this page; keep polling until that tab can
+      // navigate to the official URL and the login result has been received.
+      const loginActive=['starting','waiting'].includes(accountData?.browser_login?.status);
+      if(!document.hidden || loginActive || (loginWindow && !loginWindow.closed))refreshAccount();
+    },accountData?.busy || ['starting','waiting'].includes(accountData?.browser_login?.status)?1200:15000);
   }
 }
 document.addEventListener('click',e=>{if(e.target.closest('#refreshAccount, [data-refresh-quota]'))refreshAccount(true);});
@@ -835,3 +1025,60 @@ document.addEventListener('click',async event=>{
     }
   }catch(error){priceFetchMessage=error.message;if(state.view==='pricing')render();}
 });
+
+$('logoutDialog').addEventListener('cancel',event=>{if(event.currentTarget.dataset.busy==='true')event.preventDefault();});
+document.addEventListener('change',event=>{const key=event.target.dataset?.appearance;if(!Object.hasOwn(appearanceDefaults,key))return;appearance[key]=key==='size'?Math.max(12,Math.min(20,Math.round(Number(event.target.value)||15))):event.target.value;if(key==='size')event.target.value=appearance.size;saveAppearance();if(key==='accent')document.querySelectorAll('[data-accent]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.accent===appearance.accent)));if(key==='font'){const field=document.querySelector('[data-appearance="customFont"]');if(field){field.disabled=appearance.font!=='custom';field.closest('[data-custom-font-field]').hidden=appearance.font!=='custom';}}});
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-accent],[data-appearance-reset]');if(!button)return;
+  if(button.dataset.accent)appearance.accent=button.dataset.accent;else appearance={...appearanceDefaults};
+  saveAppearance();
+  const panel=document.querySelector('.appearance-panel');
+  if(panel){
+    panel.outerHTML=appearanceView();
+    for(const [id,value] of Object.entries(settingsAutosave.drafts())){if($(id))$(id).value=value;}
+    paintSaveFeedback();
+  }
+});
+
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-detect-fonts]');if(!button)return;
+  const status=document.getElementById('fontDetectionStatus');
+  if(!window.queryLocalFonts){status.textContent='浏览器不支持完整字体列表，已检测常见字体；其他字体可手动输入。';return;}
+  button.disabled=true;
+  try{const fonts=await window.queryLocalFonts();detectedFonts=[...new Set(fonts.map(font=>font.family))];const menu=document.querySelector('.font-menu');if(menu)menu.innerHTML=fontOptions();status.textContent='字体列表已更新。';}
+  catch(_){status.textContent='未获得字体访问权限，仍可使用已检测字体或手动输入。';}
+  finally{button.disabled=false;}
+});
+
+document.addEventListener('click',event=>{
+  const picker=document.querySelector('.font-picker');if(!picker)return;
+  if(event.target.closest('.font-picker summary')){event.preventDefault();picker.open=!picker.open;return;}
+  const option=event.target.closest('[data-font-option]');
+  if(option){appearance.font=option.dataset.fontOption;saveAppearance();picker.querySelector('.font-menu').innerHTML=fontOptions();picker.querySelector('#fontPickerValue').textContent=fontLabel();picker.open=false;picker.querySelector('summary').focus();const field=document.querySelector('[data-custom-font-field]');field.hidden=appearance.font!=='custom';field.querySelector('input').disabled=appearance.font!=='custom';}
+  else if(!picker.contains(event.target))picker.open=false;
+});
+document.addEventListener('keydown',event=>{
+  const picker=event.target.closest('.font-picker');if(!picker)return;
+  const options=[...picker.querySelectorAll('[data-font-option]')],index=options.indexOf(document.activeElement);
+  if(event.key==='Escape'){picker.open=false;picker.querySelector('summary').focus();event.preventDefault();}
+  else if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){
+    event.preventDefault();picker.open=true;
+    const next=event.key==='Home'?0:event.key==='End'?options.length-1:index<0?Math.max(0,options.findIndex(o=>o.getAttribute('aria-selected')==='true')):Math.max(0,Math.min(options.length-1,index+(event.key==='ArrowDown'?1:-1)));
+    options[next]?.focus();
+  }
+});
+document.addEventListener('focusin',event=>{const picker=document.querySelector('.font-picker');if(picker&&!picker.contains(event.target))picker.open=false;});
+
+document.addEventListener('click',event=>{
+  const mode=event.target.closest('[data-theme-mode]');if(mode){appearance.mode=mode.dataset.themeMode;saveAppearance();syncModeButtons();}
+  const custom=event.target.closest('[data-custom-color]');if(custom){const input=document.querySelector('.appearance-color-input');if(input.showPicker)input.showPicker();else input.click();}
+  const step=event.target.closest('[data-size-step]');if(step){const input=document.getElementById('appearanceSize');appearance.size=Math.max(12,Math.min(20,(Number(input.value)||15)+Number(step.dataset.sizeStep)));input.value=appearance.size;saveAppearance();}
+});
+
+document.addEventListener('click',event=>{const button=event.target.closest('[data-settings-section]');if(button){selectSettingsSection(button.dataset.settingsSection);window.scrollTo({top:0,behavior:'instant'});}});
+
+document.addEventListener('click',event=>{if(event.target.closest('[data-settings-back]'))setView(settingsReturnView,settingsReturnTab);});
+
+document.addEventListener('change',event=>{if(event.target.matches('[data-settings-language]')){const language=$('language');language.value=event.target.value;language.dispatchEvent(new Event('change',{bubbles:true}));}});
+
+// Keep native form values and change events while sharing the themed menu UI.

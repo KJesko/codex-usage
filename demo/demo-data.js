@@ -237,7 +237,7 @@ const DemoData = (() => {
           for(const k of ['input','cached','write','output'])if(!Number.isFinite(p[k])||p[k]<0)throw new Error('价格必须为非负数');
           if(p.long_context!=null&&(!Number.isFinite(p.long_context)||p.long_context<=0))throw new Error('长上下文阈值必须为正数');
         }
-        for(const k of ['timezone','usage_since','avatar_initials','prices','quota_alerts'])if(k in next)config[k]=structuredClone(next[k]);
+        for(const k of ['timezone','timezone_mode','usage_since','avatar_initials','prices','quota_alerts'])if(k in next)config[k]=structuredClone(next[k]);
       }
       return structuredClone(config);
     }

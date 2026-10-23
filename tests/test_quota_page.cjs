@@ -147,3 +147,18 @@ test('time view choice is restored and changing it requests a chart redraw',()=>
   assert.equal(redraw[0].view,'cycle');
   assert.match(context.module.exports.pacePanel(q),/data-pace-view="cycle" aria-pressed="true"/);
 });
+
+test('large reset history renders only the initial batch and retains scroll position',()=>{
+  let html='';
+  const host={scrollTop:120,getBoundingClientRect:()=>({top:0}),querySelectorAll:()=>[]};
+  const context={module:{exports:{}},esc:escape,number:String,accountTime:String,
+    document:{documentElement:{lang:'zh-CN'},getElementById:()=>host,addEventListener:()=>{},activeElement:null},
+    QuotaDOM:{patch:(_,value)=>{html=value;host.scrollTop=0;}}};
+  const source=fs.readFileSync(require.resolve('../src/codex_usage/static/quota-page.js'),'utf8').replace('return {panel,render,','return {renderEvents,panel,render,');
+  vm.runInNewContext(source,context);
+  const rows=Array.from({length:2000},(_,id)=>({id:String(id),kind:'official',at:now-id,since:now-id-60,before_used:80,after_used:0,label:'long '.repeat(100)}));
+  context.module.exports.renderEvents({reset_events:rows});
+  assert.equal((html.match(/class="reset-event"/g)||[]).length,10);
+  assert.match(html,/还有 1990 条/);
+  assert.equal(host.scrollTop,120);
+});
