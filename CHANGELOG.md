@@ -2,6 +2,8 @@
 
 ## Unreleased — web/source only
 
+- 网页演示新增日常开发、连接中断、额度告急、长期记录四种场景，以及自动保存失败与重试体验；合成数据覆盖不同缓存特征、独立更新状态、数据覆盖缺口和近三个月重置历史。演示不读取本机数据或连接真实账号。The web demo now offers four realistic synthetic scenarios, save-failure recovery, varied cache behavior, independent source status, coverage gaps and three months of quota history, without accessing local data or real accounts.
+
 - 数据更新状态移至「数据覆盖情况」，正常状态与更新时间合并为一行；自动保存说明收进「数据来源」帮助，逐项保留实际保存进度和错误反馈。Move update status into Data coverage, show healthy timestamps inline, and keep autosave guidance in source help while retaining actionable save feedback.
 
 - 网页设置增加逐项自动保存反馈、输入校验和失败重试；修改按字段串行提交，刷新保留输入与焦点，保存和数据读取分别提示。新增本地日志、远程服务器、账号额度、模型价格的独立更新时间与异常处理入口。大列表支持搜索分页，轮询防重入并在连接失败时退避，清理失效弹层并限制界面状态缓存。Web settings now show per-field save feedback and retries, preserve drafts/focus, and distinguish saved changes from refresh failures. A source-status panel reports independent update times and recovery actions. Large selectors are searchable and paginated, polling is bounded, and stale UI controls are released.

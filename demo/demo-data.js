@@ -28,7 +28,14 @@ const DemoData = (() => {
     const matches=candidates.filter(at=>wallClock(at,zone)===local);
     return matches.length?Math.min(...matches):Math.max(...candidates);
   }
-  function create(catalog, now=Date.now()) {
+  function create(catalog, now=Date.now(), clock=()=>now) {
+    let scenario='daily',saveFailure=false,signedOut=false;
+    const recovered={};
+    function setScenario(value){
+      if(!['daily','interrupted','limit','history'].includes(value))throw new Error('无效的演示场景');
+      scenario=value;signedOut=false;for(const key of Object.keys(recovered))delete recovered[key];
+      return value;
+    }
     let seed=20261021;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
     const projects=[
@@ -66,7 +73,9 @@ const DemoData = (() => {
         const start=base-ago*DAY+([9,11,14,16][s]+random()*.5)*3600000;
         for(let turn=0;turn<turns;turn++){
           const input=Math.round((150000+random()*400000)*scales[index]*intensity);
-          const cached=Math.floor(input*(.92+random()*.065)),write=Math.floor(input*.005);
+          // Cold starts, growing context and different workloads should be visible in daily charts.
+          const warm=Math.min(1,turn/5),baseCache=[.70,.56,.83,.25,.48,.76][index];
+          const cached=Math.floor(input*Math.min(.98,Math.max(.08,baseCache+.16*warm+(random()-.5)*.18-(turn===0?.24:0)))),write=Math.floor(input*.005);
           const output=Math.max(120,Math.round((2500+random()*9000)*Math.sqrt(scales[index])));
           const at=start+turn*150000;
           if(at>now)continue;
@@ -80,12 +89,20 @@ const DemoData = (() => {
       }
     }
     events.sort((a,b)=>a.at.localeCompare(b.at));
-    const config={timezone:'Asia/Shanghai',sources:['/demo/codex'],usage_since:'',avatar_initials:'DM',prices:{},csrf:'demo-only',
+    const config={timezone:'Asia/Shanghai',timezone_mode:'manual',sources:['/demo/codex'],usage_since:'',avatar_initials:'DM',prices:{},csrf:'demo-only',
       quota_alerts:{enabled:true,remaining_percent:20,predictive:true},
       remotes:[{id:'dev',name:'演示开发机',host:'dev.example.invalid',path:'/demo/codex',interval:120,enabled:true},
         {id:'lab',name:'演示实验机',host:'lab.example.invalid',path:'/demo/codex',interval:120,enabled:true}]};
-    const remotes=()=>config.remotes.map(r=>({...r,busy:false,error:null,
-      files:new Set(events.filter(e=>e.source==='ssh:'+r.id).map(e=>e.session)).size,synced_at:iso(now),root:r.path}));
+    const remotes=()=>config.remotes.map((r,i)=>({...r,busy:false,
+      error:scenario==='interrupted'&&r.id==='lab'&&!recovered.remote?'模拟连接中断：实验机暂时离线，已保留上次日志。':null,
+      files:new Set(events.filter(e=>e.source==='ssh:'+r.id).map(e=>e.session)).size,
+      synced_at:iso(scenario==='interrupted'&&r.id==='lab'&&!recovered.remote?clock()-2*3600000:recovered.remote||clock()-(i+1)*40000),root:r.path}));
+    function status(){
+      const missing=[...new Set(events.map(e=>e.model))].filter(model=>!config.prices[model]&&!catalog.models[catalog.aliases?.[model]||model]);
+      return {local:{running:true,last_scan:iso(recovered.local||clock()-15000),scan_interval_seconds:30},remotes:remotes(),
+        prices:{last_success:clock()/1000-3600,last_check:clock()/1000-300,interval_seconds:86400,missing,unresolved:missing}};
+    }
+    function recover(source){recovered[source]=clock();return status();}
     function priced(e){
       const rates={...catalog.models,...config.prices};
       const rate=config.prices[e.model]||rates[catalog.aliases?.[e.model]||e.model];
@@ -162,11 +179,11 @@ const DemoData = (() => {
         options:{projects:projects.map(([id,name,source])=>({id,name,source,path:'/demo/projects/'+id})),models:[...new Set(available.map(e=>e.model))].sort(),
           accounts:[...new Set(available.map(e=>e.account))].sort(),sources:[{id:'local',name:'演示笔记本'},...config.remotes.map(r=>({id:'ssh:'+r.id,name:r.name}))]},
         comparison,
-        coverage:{sessions:new Set(events.map(e=>e.session)).size,metadata_sessions:new Set(events.map(e=>e.session)).size,files:new Set(events.map(e=>e.session)).size,
-          missing_sessions:0,retained_files:0,scan_ms:0,warnings:{},issues:[]},limits:[],missing_projects:[],scanned_at:iso(now),timezone:zone,
+        coverage:{sessions:new Set(events.map(e=>e.session)).size,metadata_sessions:new Set(events.map(e=>e.session)).size+8,files:new Set(events.map(e=>e.session)).size,
+          missing_sessions:8,retained_files:3,scan_ms:42,warnings:{},issues:['模拟覆盖说明：另有 8 个历史会话只保留元数据，未计入 Token；已保留 3 个源文件消失前的缓存。']},limits:[],missing_projects:[],scanned_at:iso(clock()),timezone:zone,
         usage_start:config.usage_since?{date:config.usage_since,timezone:config.timezone,at:iso(cutoff)}:null,range:{since:start,until:end,today,grain},
-        pricing:{...catalog,models:{...catalog.models,...config.prices},overrides:Object.keys(config.prices),unknown_models:[...new Set(rows.filter(e=>e.cost==null).map(e=>e.model))]},
-        remotes:remotes(),collector:{running:false,last_scan:iso(now),scan_interval_seconds:30}};
+        pricing:{...catalog,models:{...catalog.models,...config.prices},sync:status().prices,overrides:Object.keys(config.prices),unknown_models:[...new Set(rows.filter(e=>e.cost==null).map(e=>e.model))]},
+        remotes:remotes(),collector:status().local};
     }
     const quotaNow=now/1000,anchor=base/1000,day=DAY/1000;
     const begin=anchor-13*day,end=anchor+day,scheduled=begin+7*day,deadline=scheduled+7*day;
@@ -212,25 +229,51 @@ const DemoData = (() => {
       references.push({since,until:Math.min(until,cycleEnd),before:0,
         after:100*(Math.min(until,cycleEnd)-since)/(cycleEnd-since),cycle_end:cycleEnd});
     }
+    // Stay within the real 90-day retention window while exercising list pagination.
+    const historySamples=[],historyEvents=[],historyReferences=[];
+    for(let cycle=10;cycle>0;cycle--){
+      const since=begin-cycle*7*day,until=since+7*day,target=58+(cycle*13)%39;
+      let used=0;
+      for(let hour=0;hour<168;hour++){
+        const at=since+hour*3600,localHour=((at+8*3600)%day)/3600;
+        if(localHour>=9&&localHour<18)used+=target/63;
+        historySamples.push({at,used_percent:Math.round(used),break_before:hour===0});
+      }
+      historySamples.push({at:until-1,used_percent:target,break_before:false});
+      historyEvents.push({id:'demo-history-'+cycle,kind:'scheduled',label:'每周额度',at:until,since:until-60,confirmed_at:until,
+        before_used:target,after_used:0,old_reset:until,new_reset:until+7*day});
+      historyReferences.push({since,until,before:0,after:100,cycle_end:until});
+    }
+    function quotaSeries(){
+      const latest=scenario==='limit'?samples.map(s=>s.at>=resetEvents.at(-1).at?{...s,used_percent:Math.round(s.used_percent/Math.max(1,samples.at(-1).used_percent)*95)}:s):samples;
+      return scenario==='history'?{samples:[...historySamples,...latest],events:[...historyEvents,...resetEvents],references:[...historyReferences,...references]}:{samples:latest,events:resetEvents,references};
+    }
     const acknowledged=new Set();
-    function quota(){return {account:{label:'演示账号 · 非真实数据',plan:'pro'},windows:[
-      {id:'codex:primary',bucket:'codex',label:'每周额度',used_percent:samples.at(-1).used_percent,
-        remaining_percent:100-samples.at(-1).used_percent,resets_at:deadline,window_minutes:10080},
+    function quota(){
+      if(signedOut)return {signed_out:true,account:null,windows:[],reset_events:[],alerts:[],history_available:false,busy:false,stale:false,problem:{kind:'signed_out',message:'演示账号已退出'}};
+      const series=quotaSeries(),used=series.samples.at(-1).used_percent,interrupted=scenario==='interrupted'&&!recovered.account;
+      return {account:{label:'演示账号 · 非真实数据',plan:'pro'},windows:[
+      {id:'codex:primary',bucket:'codex',label:'每周额度',used_percent:used,
+        remaining_percent:100-used,resets_at:deadline,window_minutes:10080},
       {id:'codex:secondary',bucket:'codex',label:'5 小时额度',used_percent:28,remaining_percent:72,resets_at:quotaNow+7200,window_minutes:300}],
-      reset_credits:{available_count:2,details:[{expires_at:quotaNow+15*86400},{expires_at:quotaNow+28*86400}]},reset_events:resetEvents,
-      fetched_at:iso(now),busy:false,stale:false,history_scope:'demo-account:'+config.timezone,history_available:true,
+      reset_credits:{available_count:2,details:[{expires_at:quotaNow+15*86400},{expires_at:quotaNow+28*86400}]},reset_events:[...series.events].reverse(),
+      fetched_at:iso(interrupted?clock()-8*60000:recovered.account||clock()-30000),busy:false,stale:interrupted,
+      problem:interrupted?{kind:'transport',message:'模拟额度连接中断；当前显示上次成功结果。'}:null,
+      history_scope:'demo-account:'+config.timezone+':'+scenario,history_available:true,
       collector:{running:false,interval_seconds:60,failures:0,last_success:iso(now)},alerts:[{id:'demo-alert',at:resetEvents.at(-1).at-3600,active:false,
-        acknowledged:acknowledged.has('demo-alert'),message:'模拟历史提醒：上一使用段剩余额度低于 20%。'}]};}
+        acknowledged:acknowledged.has('demo-alert'),message:'模拟历史提醒：上一使用段剩余额度低于 20%。'},
+        ...(scenario==='limit'?[{id:'demo-limit',at:clock()/1000,active:true,acknowledged:acknowledged.has('demo-limit'),message:'模拟额度提醒：每周额度剩余 5%，建议关注下一次重置时间。'}]:[])]};}
     function quotaRange(){
-      const ticks=[],firstDay=dayIn(begin*1000,config.timezone),lastDay=offset(dayIn(now,config.timezone),1);
+      const series=quotaSeries(),ticks=[],firstDay=dayIn((scenario==='history'?begin-10*7*day:begin)*1000,config.timezone),lastDay=offset(dayIn(now,config.timezone),1);
       for(let date=firstDay;date<=lastDay;date=offset(date,1))ticks.push({at:instant(date,'00:00:00.000',config.timezone)/1000,date});
-      return {custom_range:true,history_scope:'demo-account:'+config.timezone,timezone:config.timezone,grain:'auto',
+      return {custom_range:true,history_scope:'demo-account:'+config.timezone+':'+scenario,timezone:config.timezone,grain:'auto',
         range:{since:ticks[0].at,until:ticks.at(-1).at,since_date:ticks[0].date,until_date:ticks.at(-2).date},ticks,
-        groups:[{id:'demo-week',label:'每周额度（模拟）',plan:'pro',window:'codex:primary',sample_count:samples.length,segment_count:4,
-          samples,references,idle:[],events:resetEvents}]};
+        groups:[{id:'demo-week',label:'每周额度（模拟）',plan:'pro',window:'codex:primary',sample_count:series.samples.length,segment_count:series.events.length+1,
+          ...series,idle:[]}]};
     }
     function settings(next){
       if(next){
+        if(saveFailure){saveFailure=false;throw new Error('模拟保存失败，修改尚未保存。点击重试即可恢复。');}
         new Intl.DateTimeFormat('en',{timeZone:next.timezone});
         if(next.usage_since&&!validDate(next.usage_since))throw new Error('日期格式无效');
         for(const p of Object.values(next.prices||{})){
@@ -258,7 +301,7 @@ const DemoData = (() => {
       const values=[r.timezone,r.range.since,r.range.until,r.range.grain,'current_standard_api_equivalent',r.pricing.verified_at,r.usage_start?.at||''];
       return '\ufeff'+[['data_type',...keys,...meta],...rows.map(row=>['SIMULATED',...keys.map(k=>row[k]),...values])].map(row=>row.map(cell).join(',')).join('\r\n');
     }
-    return {events,report,settings,quota,quotaRange,remotes,csv,acknowledge:id=>{acknowledged.add(id);return quota();}};
+    return {events,report,settings,quota,quotaRange,remotes,status,recover,setScenario,failNextSave:()=>{saveFailure=true;},signOut:value=>{signedOut=value;return quota();},csv,acknowledge:id=>{acknowledged.add(id);return quota();}};
   }
   return {create};
 })();

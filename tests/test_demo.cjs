@@ -26,17 +26,24 @@ test('demo API bridge intercepts account and mutation requests without reaching 
     refreshAccount(force){assert.equal(force,true);refreshes++;},load(force){assert.equal(force,true);loads++;}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../demo/demo-bridge.js'),'utf8'),context);
   const q=await context.window.fetch('/api/account');assert.equal((await q.json()).account.label,'演示账号 · 非真实数据');
-  const blocked=await context.window.fetch('/api/remotes/sync',{method:'POST'});assert.equal(blocked.status,400);
+  const sync=await context.window.fetch('/api/remotes/sync',{method:'POST'});assert.equal(sync.status,200);assert.equal((await sync.json()).ok,true);
   const forecast=await context.window.fetch('/api/reset-updates');assert.equal((await forecast.json()).probability,null);
   await assert.rejects(()=>context.window.fetch('/api/data',{signal:{aborted:true}}),{name:'AbortError'});
   assert.equal(calls,0);
   listeners.click({target:{closest:()=>({id:'refresh'})},preventDefault(){},stopImmediatePropagation(){}});
   assert.equal(refreshes,1);assert.equal(loads,1);assert.equal(calls,0);
   await context.window.fetch('/api/settings',{method:'POST',body:JSON.stringify({timezone:'America/Los_Angeles'})});
-  assert.equal(context.accountData.history_scope,'demo-account:America/Los_Angeles');
+  assert.equal(context.accountData.history_scope,'demo-account:America/Los_Angeles:daily');
   const patched=await context.window.fetch('/api/settings/patch',{method:'POST',body:JSON.stringify({avatar_initials:'AB'})});
   const saved=await patched.json();assert.equal(saved.avatar_initials,'AB');assert.equal(saved.timezone,'America/Los_Angeles');
-  const status=await (await context.window.fetch('/api/status')).json();assert.equal(status.local.running,false);assert.ok(status.remotes.length);assert.equal(calls,0);
+  const status=await (await context.window.fetch('/api/status')).json();assert.equal(status.local.running,true);assert.ok(status.remotes.length);assert.equal(calls,0);
+  // A direct quota URL has settings but no usage report yet.
+  Object.assign(context,{settings:saved,data:null,dataSnapshot:null,statusError:'',reportError:'',state:{view:'quota'},params:()=>new URLSearchParams(),
+    setView(view){context.state.view=view;},renderAccount(){},renderQuotaPace(){}});
+  context.document.querySelectorAll=()=>[];context.document.getElementById=()=>({textContent:''});
+  await listeners.click({target:{closest:()=>({dataset:{demoScenario:'history'}})},preventDefault(){},stopImmediatePropagation(){}});
+  assert.ok(context.data.summary.total>0);assert.equal(context.accountData.reset_events.length,13);
+  assert.equal(context.state.view,'quota');assert.equal(calls,0);
 });
 test('synthetic totals reconcile across dimensions and obey model, machine, date and session filters',()=>{
   const demo=create(catalog,now),r=demo.report(query);
@@ -47,6 +54,42 @@ test('synthetic totals reconcile across dimensions and obey model, machine, date
   const filtered=demo.report({...query,source:'local',model:'gpt-6.1-sol'});assert.ok(filtered.summary.total<r.summary.total);
   assert.ok(filtered.projects.every(p=>p.source==='local'));assert.deepEqual(filtered.models.map(m=>m.name),['gpt-6.1-sol']);
   const one=demo.report({since:query.until,until:query.until});assert.equal(one.timeline.length,1);assert.ok(one.summary.total>0);
+});
+
+test('interruption preserves observed usage and independent source times until explicit recovery',()=>{
+  let clock=now;const demo=create(catalog,now,()=>clock),total=demo.report(query).summary.total;
+  demo.setScenario('interrupted');
+  const status=demo.status(),lab=status.remotes.find(r=>r.id==='lab');
+  assert.ok(lab.error);assert.equal(Date.parse(lab.synced_at),clock-7200000);
+  assert.ok(demo.quota().stale&&demo.quota().problem);assert.equal(demo.report(query).summary.total,total);
+  clock+=60000;demo.recover('remote');assert.ok(demo.remotes().every(r=>!r.error));
+  assert.equal(Date.parse(demo.remotes()[0].synced_at),clock);assert.ok(demo.quota().stale,'remote retry must not clear quota failure');
+  demo.recover('account');assert.equal(demo.quota().stale,false);assert.equal(demo.quota().problem,null);
+  assert.equal(demo.report(query).summary.total,total);
+  const c=demo.report(query).coverage;assert.equal(c.metadata_sessions,c.sessions+c.missing_sessions);assert.ok(c.retained_files>0);
+});
+
+test('long history and low quota scenarios keep cards, reset records and chart samples consistent',()=>{
+  const demo=create(catalog,now);
+  for(const scenario of ['daily','limit','history']){
+    demo.setScenario(scenario);const q=demo.quota(),range=demo.quotaRange(),g=range.groups[0];
+    assert.equal(q.windows[0].used_percent,g.samples.at(-1).used_percent);
+    assert.deepEqual(q.reset_events,[...g.events].reverse());assert.equal(q.history_scope,range.history_scope);
+    assert.ok(g.samples.every((s,i)=>s.used_percent>=0&&s.used_percent<=100&&(!i||s.at>g.samples[i-1].at)));
+    for(const event of g.events){assert.equal(g.samples.findLast(s=>s.at<event.at).used_percent,event.before_used);assert.equal(g.samples.find(s=>s.at===event.at).used_percent,event.after_used);}
+    if(scenario==='limit'){assert.equal(q.windows[0].remaining_percent,5);assert.ok(q.alerts.some(a=>a.active));}
+    if(scenario==='history'){assert.equal(g.events.length,13);assert.ok(g.samples.length>2000);assert.ok(range.range.until-range.range.since<90*86400);}
+  }
+});
+
+test('one-shot save failure uses real autosave retry and preserves unrelated settings',async()=>{
+  const {createAutosave}=require('../src/codex_usage/static/web-state.js'),demo=create(catalog,now),before=demo.settings();
+  const saver=createAutosave({persist:async patch=>demo.settings(patch),schedule:()=>1,cancel(){}});
+  demo.failNextSave();saver.edit('settingsAvatar','AB');await saver.flush();
+  assert.equal(saver.snapshot().settingsAvatar.status,'error');assert.equal(demo.settings().avatar_initials,before.avatar_initials);
+  await saver.retry('settingsAvatar');assert.equal(saver.snapshot().settingsAvatar.status,'saved');assert.equal(demo.settings().avatar_initials,'AB');assert.equal(demo.settings().timezone,before.timezone);
+  assert.equal(demo.signOut(true).signed_out,true);assert.equal(demo.quota().windows.length,0);
+  assert.ok(demo.signOut(false).windows.length);saver.dispose();
 });
 test('grain changes preserve totals; boundary, empty and unknown-price behavior remain explicit',()=>{
   const demo=create(catalog,now),r=demo.report(query);
@@ -92,7 +135,8 @@ test('sparse activity, project scales and cached inputs stay consistent across c
     for(const mode of ['day','week','cumulative'])assert.equal(build(r,mode).summary.total,r.summary.total);
     assert.ok(r.projects[0].total/r.projects.at(-1).total>1000);
     assert.equal(r.projects.length,6);
-    for(const p of r.projects)assert.ok(p.cache_rate>.9&&p.cache_rate<1);
+    for(const p of r.projects)assert.ok(p.cache_rate>.1&&p.cache_rate<.98);
+    assert.ok(Math.max(...r.projects.map(p=>p.cache_rate))-Math.min(...r.projects.map(p=>p.cache_rate))>.3);
     for(const e of demo.events){
       assert.equal(e.input,e.uncached+e.cached+e.write);
       assert.equal(e.total,e.input+e.output);
