@@ -75,6 +75,10 @@ test('long history and low quota scenarios keep cards, reset records and chart s
     demo.setScenario(scenario);const q=demo.quota(),range=demo.quotaRange(),g=range.groups[0];
     assert.equal(q.windows[0].used_percent,g.samples.at(-1).used_percent);
     assert.deepEqual(q.reset_events,[...g.events].reverse());assert.equal(q.history_scope,range.history_scope);
+    for(const ref of g.references){
+      assert.equal(ref.cycle_end-ref.since,7*86400);
+      close((ref.after-ref.before)/(ref.until-ref.since),100/(7*86400));
+    }
     assert.ok(g.samples.every((s,i)=>s.used_percent>=0&&s.used_percent<=100&&(!i||s.at>g.samples[i-1].at)));
     for(const event of g.events){assert.equal(g.samples.findLast(s=>s.at<event.at).used_percent,event.before_used);assert.equal(g.samples.find(s=>s.at===event.at).used_percent,event.after_used);}
     if(scenario==='limit'){assert.equal(q.windows[0].remaining_percent,5);assert.ok(q.alerts.some(a=>a.active));}
@@ -162,6 +166,7 @@ test('weekly reset, independent references, sleep plateaus and collection gaps m
   assert.equal(scheduled.new_reset-scheduled.at,7*86400);
   assert.equal(g.references[0].until,scheduled.at);assert.equal(g.references[0].after,100);
   for(const ref of g.references){
+    assert.equal(ref.cycle_end-ref.since,7*86400);
     assert.equal(ref.after,100*(ref.until-ref.since)/(ref.cycle_end-ref.since));
   }
   for(const e of g.events){

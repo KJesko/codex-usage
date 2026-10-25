@@ -224,8 +224,9 @@ const DemoData = (() => {
         samples.push({at:last,used_percent:Math.round(target*used/totalWeight),break_before:last-lastAt>1800});
       }
       if(part<resetEvents.length)resetEvents[part].before_used=samples.at(-1).used_percent;
-      // Reference derives from the reset deadline, never from actual consumption.
-      const cycleEnd=part===0?scheduled:deadline;
+      // Plan 100% over seven days after each reset. Early resets truncate the
+      // line; the remaining time to an observed deadline must not steepen it.
+      const cycleEnd=since+7*day;
       references.push({since,until:Math.min(until,cycleEnd),before:0,
         after:100*(Math.min(until,cycleEnd)-since)/(cycleEnd-since),cycle_end:cycleEnd});
     }
