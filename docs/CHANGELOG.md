@@ -2,6 +2,8 @@
 
 ## Unreleased — web/source only
 
+- 精简仓库根目录：文档归入 docs，贡献与安全指南归入 .github，桌面入口与构建文件归入 packaging；更新链接和源码包清单，网页版启动方式不变。Organize documentation, community guides and desktop packaging files into their respective folders while preserving web launch commands.
+
 - 移除闲置的旧看板源码、Claude 插件与演示素材；项目来源统一记录在 README，保留原有 MIT 版权与许可声明。Remove unused legacy dashboard code, Claude plugin files and demo assets; consolidate project origins in README while preserving MIT notices.
 
 - 修复网页版演示的七天均匀使用参考线：提前重置只截断参考线，所有分段保持相同斜率，不再按距既有截止时间的剩余天数加速。Keep the demo's seven-day usage-plan reference lines parallel across early resets.
@@ -56,7 +58,7 @@ Stable **web/source** release. 推荐下载 [v1.3.0 网页版 ZIP / Web ZIP](htt
 
 Disable the old Windows supervisor and stop the service, back up the app-data directory (default `~/.codex-usage`), extract the new version and recreate its virtual environment. Start with the original port/data options, then re-enable protection from that instance. Settings, usage indexes and quota history are retained; do not copy the old `.venv` or run two versions against the same data directory.
 
-详细步骤 / Details: [中文升级说明](docs/SETUP.md#升级与备份) · [English upgrade guide](docs/SETUP.en.md#upgrade--backup) · [发布验证 / Verification](RELEASE_CHECKLIST.md).
+详细步骤 / Details: [中文升级说明](SETUP.md#升级与备份) · [English upgrade guide](SETUP.en.md#upgrade--backup) · [发布验证 / Verification](RELEASE_CHECKLIST.md).
 
 ### 已知边界 / Limits
 
@@ -90,7 +92,7 @@ Interactive usage/model/quota charts; annual activity heatmap; project and sessi
 
 ### Upgrade / 升级
 
-Stop the service (disable its Windows supervisor first), back up `~/.codex-usage`, replace the source and reinstall dependencies. Keep the user-data directory. Re-register Windows startup if the source path changed. See [中文安装说明](docs/SETUP.md#升级与备份) or [English upgrade instructions](docs/SETUP.en.md#upgrade--backup).
+Stop the service (disable its Windows supervisor first), back up `~/.codex-usage`, replace the source and reinstall dependencies. Keep the user-data directory. Re-register Windows startup if the source path changed. See [中文安装说明](SETUP.md#升级与备份) or [English upgrade instructions](SETUP.en.md#upgrade--backup).
 
 ### Known limits / 已知边界
 

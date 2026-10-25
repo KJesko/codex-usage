@@ -1,20 +1,21 @@
 $ErrorActionPreference = 'Stop'
-Set-Location $PSScriptRoot
-$desktopPython = Join-Path $PSScriptRoot '.venv/Scripts/python.exe'
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $projectRoot
+$desktopPython = Join-Path $projectRoot '.venv/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $desktopPython)) {
     python -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw 'Could not create Python environment.' }
 }
-& $desktopPython -m pip install -r requirements-desktop.txt
+& $desktopPython -m pip install -r packaging/requirements-desktop.txt
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 & $desktopPython scripts/prepare_desktop.py
 if ($LASTEXITCODE -ne 0) { throw 'Resource preparation failed.' }
 & $desktopPython -m unittest discover -s tests -v
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-& $desktopPython -m PyInstaller --noconfirm --clean CodexUsage.spec
+& $desktopPython -m PyInstaller --noconfirm --clean packaging/CodexUsage.spec
 if ($LASTEXITCODE -ne 0) { throw 'Executable build failed.' }
-$desktopExe = Join-Path $PSScriptRoot 'dist/CodexUsage.exe'
-$desktopTest = Join-Path $PSScriptRoot 'build/desktop-self-test.json'
+$desktopExe = Join-Path $projectRoot 'dist/CodexUsage.exe'
+$desktopTest = Join-Path $projectRoot 'build/desktop-self-test.json'
 $desktopArgs = '--self-test "' + $desktopTest + '"'
 $desktopProcess = Start-Process -FilePath $desktopExe -ArgumentList $desktopArgs -WindowStyle Hidden -PassThru
 if (-not $desktopProcess.WaitForExit(60000)) {

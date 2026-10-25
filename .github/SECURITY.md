@@ -6,7 +6,7 @@ The server validates its Host header. Mutating requests require a CSRF token and
 
 Source logs are read-only. Local indexes, quota history, configuration, CSV exports and screenshots can contain titles, paths, server addresses and account metadata. Keep them private. Never attach `auth.json`, tokens, SSH keys, actual reset-card identifiers or full logs to public issues.
 
-Network features are documented in the [English user guide](docs/USER_GUIDE.en.md#data--privacy) and [中文使用指南](docs/USER_GUIDE.md#数据与隐私). Language translation is local and sends no content to translation services.
+Network features are documented in the [English user guide](../docs/USER_GUIDE.en.md#data--privacy) and [中文使用指南](../docs/USER_GUIDE.md#数据与隐私). Language translation is local and sends no content to translation services.
 
 ## Reporting
 

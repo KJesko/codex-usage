@@ -1,8 +1,8 @@
-# Build on Windows with: python -m PyInstaller --noconfirm --clean CodexUsage.spec
+# Build on Windows with: python -m PyInstaller --noconfirm --clean packaging/CodexUsage.spec
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files
 
-root = Path(SPECPATH)
+root = Path(SPECPATH).resolve().parent
 data = collect_data_files('tzdata') + [
     (str(root / 'src/codex_usage/static'), 'codex_usage/static'),
     (str(root / 'src/codex_usage/locales'), 'codex_usage/locales'),

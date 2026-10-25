@@ -7,7 +7,7 @@
 
 一个在本地运行的 Codex 用量看板，支持简体中文 / English。按项目、会话和模型查看 Token 与参考成本，跟踪账号额度与重置，也能通过 SSH 汇总多台机器的用量。源日志只读，无需上传到本项目的服务器。
 
-**[在线演示](https://kjesko.github.io/codex-usage/)**（全部为模拟数据） · [功能与截图](docs/USER_GUIDE.md) · [更新日志](CHANGELOG.md)
+**[在线演示](https://kjesko.github.io/codex-usage/)**（全部为模拟数据） · [功能与截图](docs/USER_GUIDE.md) · [更新日志](docs/CHANGELOG.md)
 
 ## 下载
 
@@ -55,7 +55,7 @@ python3 -m venv .venv
 | [使用指南](docs/USER_GUIDE.md) | 功能、截图、图表与导出、价格与统计口径、额度及隐私边界 |
 | [开发与维护](docs/DEVELOPMENT.md) | 测试、项目结构、英文翻译、演示站部署、桌面构建 |
 
-[贡献指南](CONTRIBUTING.md) · [安全与隐私](SECURITY.md) · [问题反馈](https://github.com/KJesko/codex-usage/issues)
+[贡献指南](.github/CONTRIBUTING.md) · [安全与隐私](.github/SECURITY.md) · [问题反馈](https://github.com/KJesko/codex-usage/issues)
 
 独立社区项目，与 OpenAI 无隶属关系。API 等价成本仅供参考，不是订阅账单。采用 [MIT 许可证](LICENSE)。
 

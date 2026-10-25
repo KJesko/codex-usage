@@ -7,7 +7,7 @@
 
 A local Codex usage dashboard with Simplified Chinese and English interfaces. Explore tokens and reference costs by project, session and model, track quota and resets, and aggregate multiple machines over SSH. Source logs are read-only and are not uploaded to a project-operated server.
 
-**[Interactive demo](https://kjesko.github.io/codex-usage/en/)** (synthetic data only) · [Features & screenshots](docs/USER_GUIDE.en.md) · [Changelog](CHANGELOG.md)
+**[Interactive demo](https://kjesko.github.io/codex-usage/en/)** (synthetic data only) · [Features & screenshots](docs/USER_GUIDE.en.md) · [Changelog](docs/CHANGELOG.md)
 
 ## Download
 
@@ -55,7 +55,7 @@ Open the [local dashboard](http://127.0.0.1:8787). For startup problems, see [Tr
 | [User guide](docs/USER_GUIDE.en.md) | Features, screenshots, charts, exports, pricing, quota and privacy boundaries |
 | [Development & maintenance](docs/DEVELOPMENT.en.md) | Tests, project structure, translations, demo deployment and desktop builds |
 
-[Contributing](CONTRIBUTING.md) · [Security & privacy](SECURITY.md) · [Report an issue](https://github.com/KJesko/codex-usage/issues)
+[Contributing](.github/CONTRIBUTING.md) · [Security & privacy](.github/SECURITY.md) · [Report an issue](https://github.com/KJesko/codex-usage/issues)
 
 Independent community project, not affiliated with OpenAI. API-equivalent costs are estimates, not subscription bills. Licensed under [MIT](LICENSE).
 

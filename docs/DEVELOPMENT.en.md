@@ -4,7 +4,7 @@
 
 [Tests](#development--tests) · [Demo](#demo-maintenance) · [Translation](#translation) · [Desktop](#windows-desktop-builds) · [Documentation](#documentation--packaging) · [License](#attribution--license)
 
-Users should start with the [README](../README.en.md). See [Setup & configuration](SETUP.en.md) for launch and background settings, [CONTRIBUTING](../CONTRIBUTING.md) for contribution rules and [SECURITY](../SECURITY.md) for security reports.
+Users should start with the [README](../README.en.md). See [Setup & configuration](SETUP.en.md) for launch and background settings, [CONTRIBUTING](../.github/CONTRIBUTING.md) for contribution rules and [SECURITY](../.github/SECURITY.md) for security reports.
 
 ## Development & tests
 
@@ -33,7 +33,9 @@ src/codex_usage/
   static/                   Bilingual frontend
 tests/                      Python and JavaScript tests
 scripts/                    Demo/desktop assets and Windows supervision
-packaging/                  Windows build configuration
+packaging/                  Desktop entry point, dependencies and Windows builds
+docs/                       Guides, changelog and release verification
+.github/                    Workflows, contribution guide and security policy
 ```
 
 ## Demo maintenance
@@ -59,7 +61,7 @@ English UI resources live in `src/codex_usage/locales/en.json`. `web_i18n.py` ge
 This is a separate build path; the v1.3.0 web release does not ship a new desktop executable. On Windows x64 with Python 3.12:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\build-windows.ps1
 ```
 
 The script installs pinned desktop dependencies, runs Python tests, generates icons/notices, packages with PyInstaller, performs a build self-check and writes SHA256 checksums. Output is `dist/CodexUsage.exe` with notices in `dist/`.
@@ -69,15 +71,15 @@ The desktop uses pywebview and [Microsoft Edge WebView2 Runtime](https://develop
 To run a desktop window during development:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
-.\.venv\Scripts\python.exe codex_usage_desktop.py
+.\.venv\Scripts\python.exe -m pip install -r packaging/requirements-desktop.txt
+.\.venv\Scripts\python.exe packaging/codex_usage_desktop.py
 ```
 
 ## Documentation & packaging
 
 Keep the README focused on introduction, download, startup and documentation links. Put installation/account/background details in `docs/SETUP.en.md`, Agent prompts in `docs/AGENT_SETUP.en.md`, feature/accounting/privacy details in `docs/USER_GUIDE.en.md`, and developer material here. Maintain matching Chinese files and resolve links/images relative to the containing document.
 
-The source-distribution include list in `pyproject.toml` must carry `docs/`, root guides and referenced assets for offline reading. The demo ships only allowlisted frontend assets and synthetic data. This release's validation is recorded in [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md).
+The source-distribution include list in `pyproject.toml` must carry `docs/`, contribution/security guides in `.github/`, and referenced assets for offline reading. The demo ships only allowlisted frontend assets and synthetic data. This release's validation is recorded in [RELEASE_CHECKLIST](RELEASE_CHECKLIST.md).
 
 ## Attribution & license
 

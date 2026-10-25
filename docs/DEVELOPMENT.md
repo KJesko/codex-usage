@@ -4,7 +4,7 @@
 
 [开发与测试](#开发与测试) · [演示维护](#维护在线演示) · [翻译](#英文翻译) · [桌面构建](#windows-桌面构建) · [文档打包](#文档与打包) · [许可证](#来源与许可证)
 
-使用者从 [README](../README.md) 开始；安装参数与后台配置见[安装与配置](SETUP.md)。提交规则见[贡献指南](../CONTRIBUTING.md)，安全报告见 [SECURITY](../SECURITY.md)。
+使用者从 [README](../README.md) 开始；安装参数与后台配置见[安装与配置](SETUP.md)。提交规则见[贡献指南](../.github/CONTRIBUTING.md)，安全报告见 [SECURITY](../.github/SECURITY.md)。
 
 ## 开发与测试
 
@@ -32,10 +32,12 @@ src/codex_usage/
   static/                   中英双语前端
 tests/                      Python 与 JavaScript 测试
 scripts/                    桌面资源准备与 Windows 后台服务
-packaging/                  Windows 打包配置
+packaging/                  桌面入口、依赖与 Windows 打包配置
+docs/                       使用文档、更新日志与发布检查
+.github/                    自动检查、贡献指南与安全政策
 ```
 
-欢迎通过 [Issues](https://github.com/KJesko/codex-usage/issues) 报告问题或提交 Pull Request。复现信息和测试数据请先脱敏，具体流程见 [贡献指南](../CONTRIBUTING.md)。
+欢迎通过 [Issues](https://github.com/KJesko/codex-usage/issues) 报告问题或提交 Pull Request。复现信息和测试数据请先脱敏，具体流程见 [贡献指南](../.github/CONTRIBUTING.md)。
 
 ### 维护在线演示
 
@@ -62,7 +64,7 @@ python -m http.server 8791 --bind 127.0.0.1 --directory dist
 在 Windows x64、Python 3.12 环境中运行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\build-windows.ps1
 ```
 
 脚本安装固定版本的桌面依赖，运行 Python 测试，生成图标与第三方许可证，使用 PyInstaller 打包，最后执行成品自检并生成 SHA256。输出为 `dist/CodexUsage.exe`，相关许可证也会放入 `dist/`。
@@ -72,15 +74,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 开发时可直接启动桌面窗口：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
-.\.venv\Scripts\python.exe codex_usage_desktop.py
+.\.venv\Scripts\python.exe -m pip install -r packaging/requirements-desktop.txt
+.\.venv\Scripts\python.exe packaging/codex_usage_desktop.py
 ```
 
 ## 文档与打包
 
 README 只保留介绍、下载、启动和文档入口。安装/连接/后台问题放入 `docs/SETUP.md`，Agent 提示词放入 `docs/AGENT_SETUP.md`，功能/统计/隐私说明放入 `docs/USER_GUIDE.md`；开发资料集中在本文。对应 `.en.md` 同步维护，链接与图片相对于当前文档目录。
 
-源码包的 `pyproject.toml` include 列表应包含 `docs/`、根目录指南及引用资源，使离线阅读不会丢失链接。在线演示只发布允许的合成数据和前端资产，不复制个人资料。本版发布验证记录见 [RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md)。
+源码包的 `pyproject.toml` include 列表应包含 `docs/`、`.github/` 中的贡献与安全指南及引用资源，使离线阅读不会丢失链接。在线演示只发布允许的合成数据和前端资产，不复制个人资料。本版发布验证记录见 [RELEASE_CHECKLIST](RELEASE_CHECKLIST.md)。
 
 ## 来源与许可证
 
