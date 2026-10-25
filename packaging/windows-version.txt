@@ -8,6 +8,6 @@ VSVersionInfo(
     StringStruct('OriginalFilename', 'CodexUsage.exe'),
     StringStruct('ProductName', 'Codex Usage'),
     StringStruct('ProductVersion', '1.2.0'),
-    StringStruct('LegalCopyright', 'MIT License; includes physcom/claude-usage-dashboard')
+    StringStruct('LegalCopyright', 'MIT License; see bundled LICENSE')
   ])]), VarFileInfo([VarStruct('Translation', [1033, 1200])])]
 )

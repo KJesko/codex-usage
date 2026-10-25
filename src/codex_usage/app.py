@@ -1,4 +1,4 @@
-"""Local HTTP dashboard adapted from physcom/claude-usage-dashboard (MIT)."""
+"""Local HTTP service for the Codex Usage dashboard."""
 import argparse
 import csv
 import io
@@ -48,7 +48,7 @@ def local_mono_font(weight):
 
 
 class KeyedCache:
-    """Bounded TTL cache, adapted from the upstream thread-safe snapshot cache."""
+    """Bounded thread-safe TTL cache."""
     def __init__(self, ttl=15):
         self.ttl = ttl
         self._lock = threading.Lock()

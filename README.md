@@ -57,4 +57,8 @@ python3 -m venv .venv
 
 [贡献指南](CONTRIBUTING.md) · [安全与隐私](SECURITY.md) · [问题反馈](https://github.com/KJesko/codex-usage/issues)
 
-独立社区项目，与 OpenAI 无隶属关系。API 等价成本仅供参考，不是订阅账单。基于 [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard) 定制，采用 [MIT 许可证](LICENSE)，详见 [NOTICE](NOTICE)。
+独立社区项目，与 OpenAI 无隶属关系。API 等价成本仅供参考，不是订阅账单。采用 [MIT 许可证](LICENSE)。
+
+## 项目来源
+
+项目起源于并参考了 [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard)（版本 `f3473a3`），本地 HTTP 服务、线程安全缓存和启动器结构由其改编。Codex 日志解析、统计、计价、额度追踪和现有界面为后续独立实现。仓库已移除不使用的 Claude 看板源码、插件及旧演示资料；原有版权与许可声明保留在 [LICENSE](LICENSE) 中。

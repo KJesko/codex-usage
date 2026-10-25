@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Python launcher adapted from physcom/claude-usage-dashboard (MIT).
+// Launch the local Python service. Project origins are documented in README.md.
 'use strict';
 const {spawnSync} = require('child_process');
 const path = require('path');

@@ -57,4 +57,8 @@ Open the [local dashboard](http://127.0.0.1:8787). For startup problems, see [Tr
 
 [Contributing](CONTRIBUTING.md) · [Security & privacy](SECURITY.md) · [Report an issue](https://github.com/KJesko/codex-usage/issues)
 
-Independent community project, not affiliated with OpenAI. API-equivalent costs are estimates, not subscription bills. Adapted from [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard) under the [MIT license](LICENSE); see [NOTICE](NOTICE).
+Independent community project, not affiliated with OpenAI. API-equivalent costs are estimates, not subscription bills. Licensed under [MIT](LICENSE).
+
+## Project origins
+
+This project originated from and was informed by [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard) at `f3473a3`. Its local HTTP server, thread-safe cache and launcher structure were adapted as a starting point. Codex ingestion, analytics, pricing, quota tracking and the current interface were implemented separately. Unused Claude dashboard code, plugin files and old demo assets have been removed; the original copyright and license notices remain in [LICENSE](LICENSE).

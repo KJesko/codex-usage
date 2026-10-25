@@ -2,7 +2,7 @@
   "name": "codex-usage-local",
   "version": "1.3.0",
   "private": true,
-  "description": "Local Codex usage dashboard, customized from physcom/claude-usage-dashboard",
+  "description": "Local Codex usage dashboard with token analytics, quota tracking and multi-machine reports",
   "license": "MIT",
   "repository": {
     "type": "git",

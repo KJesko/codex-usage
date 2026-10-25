@@ -2,6 +2,8 @@
 
 ## Unreleased — web/source only
 
+- 移除闲置的旧看板源码、Claude 插件与演示素材；项目来源统一记录在 README，保留原有 MIT 版权与许可声明。Remove unused legacy dashboard code, Claude plugin files and demo assets; consolidate project origins in README while preserving MIT notices.
+
 - 修复网页版演示的七天均匀使用参考线：提前重置只截断参考线，所有分段保持相同斜率，不再按距既有截止时间的剩余天数加速。Keep the demo's seven-day usage-plan reference lines parallel across early resets.
 
 - 网页演示新增日常开发、连接中断、额度告急、长期记录四种场景，以及自动保存失败与重试体验；合成数据覆盖不同缓存特征、独立更新状态、数据覆盖缺口和近三个月重置历史。演示不读取本机数据或连接真实账号。The web demo now offers four realistic synthetic scenarios, save-failure recovery, varied cache behavior, independent source status, coverage gaps and three months of quota history, without accessing local data or real accounts.
@@ -108,21 +110,3 @@ Initial public source publication of the Codex Usage customization.
 - SSH synchronization, quota history, reset observations, alerts and CSV export.
 - Windows desktop build scripts and optional background startup and recovery.
 - Python and JavaScript tests, cross-platform CI, installation and contribution documentation.
-
-The entries below describe the original upstream project, not releases of this customization.
-
-## Upstream [0.1.0] — 2026-07-02
-
-Initial public release.
-
-### Added
-- Local, stdlib-only web dashboard over [`ccusage`](https://github.com/ryoppippi/ccusage).
-- Summary cards: total cost, tokens, cache hit-rate, hits vs misses, project/session counts.
-- **Live 5-hour block** card: cost-so-far → projected, burn rate ($/hr · tok/min),
-  cache hit-rate, and an elapsed/remaining progress bar (polls every 20s, ticks every 1s).
-- Charts: tokens/day (stacked), cost/day, cache hit-rate/day, cost by model.
-- **Date-range filter**: All time / 7 / 30 / 90 days / custom (via `ccusage --since/--until`).
-- **Projects → sessions tree**: real project paths (from each session's logged `cwd`),
-  expandable to VS Code-tab-style session names (first prompt) + git branch.
-- **Agent filter** (All / Claude / Codex), recomputed client-side — no refetch.
-- Three install channels: pip/pipx CLI, npm/npx wrapper, and Claude Code plugin.

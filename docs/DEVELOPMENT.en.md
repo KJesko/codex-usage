@@ -81,6 +81,4 @@ The source-distribution include list in `pyproject.toml` must carry `docs/`, roo
 
 ## Attribution & license
 
-Based on [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard) at `f3473a332123e810363bdcc43dd991a5c7c2cb1f`, retaining upstream history and notices. The local server, thread-safe cache and launcher structure derive from upstream; Codex parsing, analytics, pricing, quota and bilingual UI are project customizations.
-
-`src/claude_usage_dashboard`, `.claude-plugin`, `commands/` and `docs/demo.svg` are retained upstream material, not the current Codex dashboard's runtime entry point or installation instructions. See the [MIT license](../LICENSE) and [NOTICE](../NOTICE).
+Project origins are documented in the [README](../README.en.md#project-origins). The current application lives under `src/codex_usage`; legacy dashboard and plugin entry points are no longer included. See the [MIT license](../LICENSE) and [price-reference notes](../NOTICE).

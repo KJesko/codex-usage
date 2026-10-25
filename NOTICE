@@ -1,14 +1,6 @@
-Codex Usage is a customized fork of:
-https://github.com/physcom/claude-usage-dashboard
-Upstream snapshot: f3473a332123e810363bdcc43dd991a5c7c2cb1f
-Upstream copyright: Copyright (c) 2026 physcom
-License: MIT (see LICENSE)
-
-The local HTTP serving structure, thread-safe TTL cache and source launchers
-are adapted from upstream. Original upstream code remains under
-src/claude_usage_dashboard for provenance, but is not used or packaged by the
-new application. Codex ingestion, deduplication, timezone analytics, pricing,
-Chinese UI, exports, settings and tests are new custom implementations.
+Codex Usage price-reference notes.
+Project origins are documented in README.md; copyright and license notices
+are included in LICENSE.
 
 Official price references, checked 2026-10-15:
 https://developers.openai.com/api/docs/pricing

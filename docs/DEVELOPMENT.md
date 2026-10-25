@@ -84,8 +84,4 @@ README 只保留介绍、下载、启动和文档入口。安装/连接/后台�
 
 ## 来源与许可证
 
-本项目基于 [physcom/claude-usage-dashboard](https://github.com/physcom/claude-usage-dashboard) 的 `f3473a332123e810363bdcc43dd991a5c7c2cb1f` 定制，保留上游 Git 历史和版权声明。本地 HTTP 服务、线程安全缓存及启动器结构来自上游；Codex 日志解析、统计、计价和中文界面为后续实现。
-
-`src/claude_usage_dashboard`、`.claude-plugin`、`commands/` 和 `docs/demo.svg` 为保留的上游代码或资料，不属于当前 Codex 看板的运行入口，也不代表当前界面或支持的安装方式。
-
-采用 [MIT 许可证](../LICENSE)，来源及第三方说明见 [NOTICE](../NOTICE)。
+项目来源统一记录在 [README](../README.md#项目来源)。当前应用源码位于 `src/codex_usage`，不包含旧看板和插件的运行入口。采用 [MIT 许可证](../LICENSE)，价格引用记录见 [NOTICE](../NOTICE)。
