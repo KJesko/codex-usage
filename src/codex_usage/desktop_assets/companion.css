@@ -1,4 +1,4 @@
-.companion { font-size:13px; min-width:0; }
+.companion { font-size:13px; min-width:0; display:flex; flex-direction:column; }
 .companion [hidden] { display:none !important; }
 .companion-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 22px; border-bottom:1px solid var(--line); }
 .companion-brand,.header-actions { display:flex; align-items:center; gap:10px; }
@@ -11,10 +11,10 @@
 .companion .button.exit-button:hover { background:#35322c; }
 .companion button:disabled { opacity:.45; cursor:not-allowed; }
 .companion .text-button { font-size:11px; padding:4px; color:var(--accent-ink); white-space:nowrap; }
-.companion-main { padding:16px 22px 0; margin:auto; }
+.companion-main { padding:16px 22px; margin:0 auto; }
 .companion-card { border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:0 16px; }
 .status-row { display:flex; align-items:center; gap:12px; padding:12px 0; min-height:60px; }
-.row-label { color:var(--muted); flex:0 0 64px; font-size:12px; }
+.row-label { color:var(--text); font-weight:700; flex:0 0 64px; font-size:12px; }
 .status-copy { min-width:0; flex:1; }
 .status-copy strong { display:block; font-size:13px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tracking-indicators { display:flex; align-items:center; gap:28px; margin-left:auto; }
@@ -44,7 +44,7 @@
 .notification-row label { display:flex; align-items:center; gap:6px; cursor:pointer; }
 .notification-row input { accent-color:var(--accent); width:14px; height:14px; }
 #messageCount { position:absolute; top:-2px; right:-4px; min-width:15px; height:15px; display:grid; place-items:center; border-radius:8px; background:var(--accent); color:#1d1b16; padding:0 3px; font:10px/1 var(--font-mono); }
-.companion-footer { margin-top:0; display:flex; flex-direction:row; text-align:left; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding:10px 22px; gap:10px; }
+.companion-footer { width:100%; margin-top:auto; display:flex; flex-direction:row; text-align:left; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding:10px 22px; gap:10px; }
 .footer-copy { display:grid; gap:3px; }
 #version { font:10px var(--font-mono); color:var(--muted); }
 .companion dialog { width:min(460px,calc(100vw - 32px)); max-height:80vh; font-size:13px; padding:20px; border:1px solid var(--line); border-radius:12px; background:var(--bg); color:var(--text); }
@@ -56,5 +56,14 @@
 .companion-message { display:flex; align-items:center; gap:10px; border-top:1px solid var(--line); padding:8px 0; }
 .companion-message>div { flex:1; min-width:0; overflow-wrap:anywhere; }
 .companion-note,.companion-message small,.companion-empty { color:var(--muted); font-size:11px; }
-@media(max-width:500px) { .companion-header { padding:12px 16px; } .companion-main { padding:14px 16px 0; } .companion-tag { display:none; } .companion-card { padding:0 12px; } .status-row { gap:8px; } .row-label { flex-basis:56px; } .companion-footer { padding:10px 16px; } .tracking-indicators { gap:20px; } }
+@media(max-width:500px) { .companion-header { padding:12px 16px; } .companion-main { padding:14px 16px; } .companion-tag { display:none; } .companion-card { padding:0 12px; } .status-row { gap:8px; } .row-label { flex-basis:56px; } .companion-footer { padding:10px 16px; } .tracking-indicators { gap:20px; } }
 @media(prefers-reduced-motion:reduce) { .status-dot.active { animation:none; box-shadow:0 0 0 3px var(--accent-soft); } }
+
+.companion .icon-button.borderless { border:0; background:transparent; color:var(--text); }
+.companion .icon-button.borderless:hover { background:var(--soft); }
+.message-heading { display:flex; align-items:center; gap:8px; min-width:0; }
+.notification-help { display:inline-flex; position:relative; color:var(--muted); cursor:help; }
+.notification-help svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.notification-tooltip { display:none; position:absolute; top:calc(100% + 8px); left:-88px; z-index:20; width:240px; max-width:calc(100vw - 100px); padding:9px 12px; background:var(--text); color:var(--bg); border-radius:8px; font-size:12px; line-height:1.7; box-shadow:0 4px 16px #0002; }
+.notification-help:is(:hover,:focus-visible) .notification-tooltip { display:block; }
+.notification-help:focus-visible { outline:2px solid var(--accent); outline-offset:4px; border-radius:50%; }

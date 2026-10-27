@@ -61,7 +61,8 @@
     $('messageCount').textContent=unread.length>99?'99+':String(unread.length);$('messageCount').hidden=unread.length===0;$('messagesButton').setAttribute('aria-label','消息中心，'+unread.length+' 条未读');setHTML('messages',messageMarkup(unread));
     $('notifications').checked=prefs.notifications!==false;$('notifications').disabled=busy||!s.tray_available;
     $('testNotification').disabled=busy||!s.tray_available||prefs.notifications===false;
-    text('notificationHint',s.notification_error||(!s.tray_available?'托盘不可用，请在这里查看提醒':'低额度、消耗风险和连接异常会通过系统通知提醒。'));
+    const notice=s.notification_error||(!s.tray_available?'托盘不可用，请在这里查看提醒':'');
+    text('notificationError',notice);$('notificationError').hidden=!notice;
     text('lifecycle',s.tray_available?'关闭窗口后收进托盘，后台继续运行':'请最小化保持运行；关闭窗口会退出');
     text('quitDescription',s.owned?'退出后将停止日志与额度追踪、消息提醒，以及本助手启动的看板服务。关闭窗口收进托盘即可继续追踪。':'退出后，助手将停止追踪和消息提醒。当前连接的独立后台服务仍会继续采集。关闭窗口收进托盘可继续使用助手。');
     document.body.classList.toggle('dark',window.matchMedia('(prefers-color-scheme: dark)').matches);
