@@ -167,7 +167,7 @@ def main(argv=None):
             if args.gui_test:
                 controller.preferences['notifications'] = False
             window = webview.create_window(TITLE, html=companion_html(), js_api=CompanionBridge(controller),
-                                           width=600, height=530, min_size=(480, 530), text_select=True,
+                                           width=600, height=460, min_size=(480, 460), text_select=True,
                                            background_color="#f5f3ee")
             controller.window = window
             window.events.closing += controller.closing

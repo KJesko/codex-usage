@@ -8,23 +8,20 @@
 /* COMPANION_STYLE */</style>
 </head>
 <body class="companion">
-<header class="companion-header"><div class="companion-brand"><span class="brand-mark" aria-hidden="true">&gt;_</span><strong>Codex Usage</strong><span class="companion-tag">后台助手</span></div><button class="text-button" id="refreshButton" data-action="refresh">刷新</button></header>
+<header class="companion-header"><div class="companion-brand"><span class="brand-mark" aria-hidden="true">&gt;_</span><strong>Codex Usage</strong><span class="companion-tag">后台助手</span></div><div class="header-actions"><button class="icon-button" id="messagesButton" title="消息中心" aria-label="消息中心"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="messageCount" hidden>0</span></button><button class="icon-button" id="refreshButton" data-action="refresh" title="刷新状态" aria-label="刷新状态"><svg viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-13-4L3 8m0-5v5h5M4 16a8 8 0 0 0 13 4l4-4m0 5v-5h-5"/></svg></button></div></header>
 <main class="companion-main">
-<div class="service-line"><span id="serviceState">正在启动后台与看板服务…</span><span id="version">Codex Usage</span></div>
+
 <section class="companion-card" aria-label="连接与追踪状态">
-<div class="status-row"><span class="row-label">追踪状态</span><div class="status-copy"><strong id="trackingTitle">正在连接后台</strong><p id="trackingDetail">后台会持续运行</p></div><span id="trackingDot" class="status-dot" aria-hidden="true"></span></div>
-<div class="log-section">
-<div class="status-row"><label class="row-label" for="logPath">日志获取</label><div class="status-copy"><strong id="logState">正在检测日志目录</strong><p id="logDetail">设置正确目录后自动保存</p></div></div>
-<div class="path-row"><input id="logPath" type="text" spellcheck="false" autocomplete="off" aria-label="Codex 日志目录" placeholder="选择 Codex 日志目录"><button class="icon-button" data-action="browse_logs" title="选择日志目录" aria-label="选择日志目录"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z M3 10h18"/></svg></button><button class="icon-button" data-action="detect_logs" title="自动检测日志目录" aria-label="自动检测日志目录"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5m-13-10 2 2 4-4"/></svg></button></div>
-</div>
-<div class="status-row account-row"><span class="row-label">账号连接</span><div class="status-copy"><strong id="accountLabel">尚未连接</strong><p id="accountDetail">通过官方浏览器页面登录</p></div><button class="button" id="loginButton" data-action="login">浏览器登录</button><button class="text-button" id="cancelLogin" data-action="cancel_login" hidden>取消</button></div>
+<div class="status-row tracking-row"><span class="row-label">追踪状态</span><span id="trackingTitle" class="sr-only">正在连接后台</span><div class="tracking-indicators"><span class="tracking-indicator" id="logIndicator" tabindex="0" role="img" aria-label="日志未连接"><span>日志</span><i id="logDot" class="status-dot" aria-hidden="true"></i><span class="indicator-tooltip" id="logTooltip" role="tooltip"></span></span><span class="tracking-indicator" id="quotaIndicator" tabindex="0" role="img" aria-label="额度未连接"><span>额度</span><i id="quotaDot" class="status-dot" aria-hidden="true"></i><span class="indicator-tooltip" id="quotaTooltip" role="tooltip"></span></span></div></div>
+<div class="status-row log-section"><label class="row-label" for="logPath">日志获取</label><div class="path-row"><span id="logState" class="log-state-icon" role="img" tabindex="0" aria-label="正在检测日志目录"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3h.01"/></svg></span><input id="logPath" type="text" spellcheck="false" autocomplete="off" aria-label="Codex 日志目录" placeholder="选择 Codex 日志目录"><button class="icon-button" data-action="browse_logs" title="选择日志目录" aria-label="选择日志目录"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z M3 10h18"/></svg></button><button class="icon-button" data-action="detect_logs" title="自动检测日志目录" aria-label="自动检测日志目录"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5m-13-10 2 2 4-4"/></svg></button></div></div>
+<div class="status-row account-row"><span class="row-label">账号连接</span><div class="status-copy"><strong id="accountLabel">尚未连接</strong></div><button class="button" id="loginButton" data-action="login">浏览器登录</button><button class="text-button" id="cancelLogin" data-action="cancel_login" hidden>取消</button></div>
 </section>
 <p class="action-status" id="actionStatus" role="status" aria-live="polite"></p>
 <div id="dashboardGate" tabindex="0" title="需要正确日志目录或者登陆"><button class="button primary dashboard-button" id="dashboardButton" data-action="dashboard" disabled>打开详细看板 <span aria-hidden="true">↗</span></button><span class="gate-tooltip" role="tooltip">需要正确日志目录或者登陆</span></div>
-<div class="notification-row"><label><input id="notifications" type="checkbox"> 消息提醒</label><button class="text-button" id="messagesButton">消息中心 <span id="messageCount">0</span></button></div>
+<div class="notification-row"><label><input id="notifications" type="checkbox"> 消息提醒</label></div>
 </main>
-<footer class="companion-footer"><span id="lifecycle">关闭窗口后收进托盘，后台继续运行</span><button class="text-button" id="quitButton">退出</button></footer>
+<footer class="companion-footer"><div class="footer-copy"><span id="lifecycle">关闭窗口后收进托盘，后台继续运行</span><span id="version">Codex Usage</span></div><button class="button exit-button" id="quitButton">退出</button></footer>
 <dialog id="messagesDialog"><div class="dialog-heading"><h2>消息中心</h2><button class="text-button" id="closeMessages">关闭</button></div><p id="notificationHint" class="companion-note"></p><div id="messages" class="companion-messages"></div><button class="text-button" data-action="test_notification" id="testNotification">发送测试提醒</button></dialog>
-<dialog id="quitDialog"><h2>退出后台助手？</h2><p id="quitDescription"></p><div class="quit-actions"><button class="button" id="cancelQuit">取消</button><button class="button primary" data-action="quit">退出</button></div></dialog>
+<dialog id="quitDialog"><h2>退出后台助手？</h2><p id="quitDescription"></p><div class="quit-actions"><button class="button" id="cancelQuit">取消</button><button class="button exit-button" data-action="quit">确认退出</button></div></dialog>
 <script>/* COMPANION_SCRIPT */</script>
 </body></html>
