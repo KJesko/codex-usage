@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from codex_usage.app import Application
 from codex_usage.companion import CompanionBridge, CompanionController, CompanionService, LocalClient, companion_html, tracking_state
 from codex_usage.desktop import DesktopServer
+from codex_usage.companion_logs import inspect_logs
 
 
 def account(**changes):
@@ -132,10 +133,11 @@ class CompanionTests(unittest.TestCase):
         try:
             self.controller.poll()
             self.client.get.assert_not_called()
+            self.assertTrue(self.controller.action('logs', str(self.root))['retryable'])
         finally:
             self.controller.operation_lock.release()
         self.controller.poll()
-        self.client.get.assert_called_once_with('/api/account')
+        self.assertEqual(self.client.get.call_args_list[0].args, ('/api/account',))
 
     def test_close_hides_only_with_working_tray_and_exit_is_explicit(self):
         self.controller.window = Mock()
@@ -164,6 +166,86 @@ class CompanionTests(unittest.TestCase):
         self.assertNotIn('/* COMPANION_SCRIPT */', html)
         bridge = CompanionBridge(self.controller)
         self.assertEqual([n for n in dir(bridge) if not n.startswith('_')], ['action', 'status'])
+
+
+    def test_empty_and_unrelated_directories_do_not_unlock_dashboard(self):
+        self.client.get.return_value = account(signed_out=True)
+        self.controller.poll()
+        self.assertFalse(self.controller.status()['dashboard_ready'])
+        self.assertEqual(self.controller.action('dashboard')['error'], '需要正确日志目录或者登陆')
+        self.browser.assert_not_called()
+        for name in ('empty', 'fake'):
+            directory = self.root / name / 'sessions'
+            directory.mkdir(parents=True)
+            (directory / 'unrelated.jsonl').write_text('{"type":"session_meta","payload":{}}\n', encoding='utf-8')
+            self.assertFalse(self.controller.action('logs', str(directory.parent))['ok'])
+        self.client.post.assert_not_called()
+
+    def valid_logs(self):
+        directory = self.root / 'codex' / 'sessions' / '2026' / '10'
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / 'rollout.jsonl').write_text(json.dumps({
+            'type':'session_meta', 'timestamp':'2026-10-27T12:00:00Z',
+            'payload':{'id':'test-session'}})+'\n', encoding='utf-8')
+        return directory.parents[2]
+
+    def test_valid_logs_save_automatically_preserving_other_roots_and_allow_logged_out_use(self):
+        directory = self.valid_logs()
+        settings = {'sources':[str(self.root / 'old'), str(self.root / 'secondary')]}
+        self.client.get.side_effect = lambda path: account(signed_out=True) if path == '/api/account' else settings
+        self.controller.poll()
+        self.assertTrue(self.controller.action('logs', str(directory / 'sessions'))['ok'])
+        self.client.post.assert_called_once_with('/api/settings/patch', {'sources':[str(directory),str(self.root / 'secondary')]})
+        settings['sources'][0] = str(directory)
+        self.assertTrue(self.controller.status()['dashboard_ready'])
+        self.assertTrue(self.controller.action('dashboard')['ok'])
+        self.browser.assert_called_once()
+        # A removed source must not be accepted using an old successful check.
+        (directory / 'sessions' / '2026' / '10' / 'rollout.jsonl').unlink()
+        self.assertFalse(self.controller.action('dashboard')['ok'])
+
+    def test_account_only_unlocks_after_successful_quota_fetch(self):
+        for data, allowed in [(account(fetched_at=None, browser_login={'status':'success'}), False),
+                              (account(), True), (account(signed_out=True), False),
+                              (account(stale=True), False), (account(problem={'kind':'timeout'}), False)]:
+            self.client.get.return_value = data
+            self.controller.poll()
+            self.assertEqual(self.controller.status()['dashboard_ready'], allowed)
+            self.assertEqual(self.controller.action('dashboard')['ok'], allowed)
+
+    def test_failed_save_does_not_unlock_unsaved_valid_directory(self):
+        directory = self.valid_logs()
+        self.client.get.return_value = account(signed_out=True)
+        self.client.post.side_effect = OSError('disk full')
+        self.controller.poll()
+        self.assertFalse(self.controller.action('logs', str(directory))['ok'])
+        self.assertFalse(self.controller.status()['dashboard_ready'])
+        self.assertFalse(self.controller.action('dashboard')['ok'])
+        self.browser.assert_not_called()
+
+    def test_log_probe_is_bounded_and_does_not_accept_folder_names_or_arbitrary_json(self):
+        directory = self.root / 'empty-codex'
+        (directory / 'sessions').mkdir(parents=True)
+        self.assertFalse(inspect_logs(str(directory))['valid'])
+        log = directory / 'sessions' / 'fake.jsonl'
+        log.write_text('[]\nnull\n' + 'x' * 70000, encoding='utf-8')
+        self.assertFalse(inspect_logs(str(directory))['valid'])
+        self.assertFalse(inspect_logs('relative/path')['valid'])
+        self.assertFalse(inspect_logs(str(log))['valid'])
+        self.assertTrue(inspect_logs(str(self.valid_logs()))['valid'])
+
+    def test_folder_picker_cancel_does_not_change_settings(self):
+        self.controller.window = Mock()
+        self.controller.window.create_file_dialog.return_value = None
+        with patch.dict(sys.modules, {'webview': SimpleNamespace(FileDialog=SimpleNamespace(FOLDER=10))}):
+            self.assertTrue(self.controller.action('browse_logs')['ok'])
+        self.client.post.assert_not_called()
+
+    def test_detect_default_directory_validates_and_saves(self):
+        directory = self.valid_logs()
+        self.client.get.return_value = {'sources':[], 'setup':{'default_source':str(directory)}}
+        self.assertTrue(self.controller.action('detect_logs')['ok'])
+        self.client.post.assert_called_once_with('/api/settings/patch', {'sources':[str(directory)]})
 
     def test_attach_reuses_service_and_does_not_stop_it_on_exit(self):
         empty = self.root / 'empty'; empty.mkdir()

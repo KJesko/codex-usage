@@ -167,7 +167,7 @@ def main(argv=None):
             if args.gui_test:
                 controller.preferences['notifications'] = False
             window = webview.create_window(TITLE, html=companion_html(), js_api=CompanionBridge(controller),
-                                           width=760, height=880, min_size=(480, 600), text_select=True,
+                                           width=600, height=530, min_size=(480, 530), text_select=True,
                                            background_color="#f5f3ee")
             controller.window = window
             window.events.closing += controller.closing
@@ -179,7 +179,7 @@ def main(argv=None):
                         tray = pystray.Icon('CodexUsage', Image.open(STATIC / 'icon.ico'), TITLE,
                             menu=pystray.Menu(
                                 pystray.MenuItem('打开后台助手', lambda: controller.show(), default=True),
-                                pystray.MenuItem('打开详细看板', lambda: controller.action('dashboard')),
+                                pystray.MenuItem('打开详细看板', lambda: controller.action('dashboard'), enabled=lambda item: controller.dashboard_ready()),
                                 pystray.MenuItem('退出助手' + ('并停止采集' if service.owned else ''), lambda: controller.quit())))
                         def tray_ready(icon):
                             icon.visible = True
@@ -193,14 +193,14 @@ def main(argv=None):
                     result = {'ok': False}
                     try:
                         for _ in range(60):
-                            result = window.evaluate_js("({title:document.getElementById('trackingTitle').textContent,buttons:document.querySelectorAll('[data-action]').length,bridge:!!window.pywebview?.api,version:document.getElementById('version').textContent,overflow:document.documentElement.scrollWidth>innerWidth})")
+                            result = window.evaluate_js("({title:document.getElementById('trackingTitle').textContent,buttons:document.querySelectorAll('[data-action]').length,bridge:!!window.pywebview?.api,version:document.getElementById('version').textContent,overflow:document.documentElement.scrollWidth>innerWidth,vertical_overflow:document.documentElement.scrollHeight>innerHeight,gate:!document.getElementById('dashboardButton').disabled})")
                             if (result.get('bridge') and __version__ in result.get('version', '')
                                     and controller.status()['connected'] and (sys.platform != 'win32' or controller.tray)):
                                 result['tray_available'] = controller.tray is not None
                                 result['close_hides'] = controller.closing() is False if controller.tray else None
                                 if controller.tray:
                                     controller.show()
-                                result['ok'] = not result['overflow'] and result['buttons'] >= 8
+                                result['ok'] = not result['overflow'] and not result['vertical_overflow'] and result['buttons'] >= 7 and result['gate'] == controller.dashboard_ready()
                                 break
                             time.sleep(.5)
                     finally:

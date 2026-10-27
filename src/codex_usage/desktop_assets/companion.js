@@ -1,64 +1,87 @@
 'use strict';
 (function(root){
-  const labels={tracking:['正在稳定追踪','后台持续采集额度，历史记录正常保存。'],signed_out:['等待账号连接','通过官方浏览器页面登录，完成后自动开始追踪。'],connecting:['正在连接后台','正在确认采集服务和最近一次成功记录。'],waiting:['等待首次额度','后台已连接，尚未取得成功记录；可以登录或刷新重试。'],error:['额度读取遇到问题','后台会自动重试。已有记录保留，不会把旧数据当作新数据。'],stale:['额度等待更新','最近记录已过期，正在等待下一次成功采集。'],paused:['采集已暂停','账号曾成功读取，但采集任务当前未运行。'],history_error:['额度可用，历史未保存','请检查数据目录或磁盘空间；实时额度仍可查看。'],offline:['后台暂时无法连接','正在自动重试。请确认后台服务仍在运行。']};
+  const labels={tracking:'额度持续追踪中',signed_out:'等待账号连接',connecting:'正在连接',waiting:'等待首次额度',error:'额度读取失败，自动重试',stale:'额度等待更新',paused:'额度采集已暂停',history_error:'额度已读取，历史保存异常',offline:'后台连接中断'};
   const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  function percent(value){return typeof value==='number'&&Number.isFinite(value)?Math.max(0,Math.min(100,value)):null;}
   function time(value){if(!value)return '—';const d=new Date(typeof value==='number'?value*1000:value);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d):'—';}
-  function quotaMarkup(account,retained){return (account.windows||[]).slice(0,12).map(w=>{const p=percent(w.remaining_percent);return `<article class="companion-quota"><header><h3>${escape(w.label||'账号额度')}</h3><strong>${p===null?'—':Math.round(p)}<small>${p===null?'':'%'}</small></strong></header><div class="quota-track" role="meter" aria-label="${escape(w.label||'额度')}剩余" ${p===null?'aria-valuetext="未知"':`aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"`}><span style="width:${p??0}%"></span></div><p>${retained?'上次记录 · ':''}${w.resets_at?'重置于 '+time(w.resets_at):'重置时间暂不可用'}</p></article>`;}).join('')||'<p class="companion-empty">成功获取额度后，将在这里显示剩余额度和重置时间。</p>';}
-  function messageMarkup(alerts){return alerts.slice(0,50).map(a=>`<article class="companion-message"><div><p>${escape(a.message)}</p><small>${time(a.at)}${a.active?'':' · 历史提醒'}</small></div><button class="text-button" data-action="acknowledge" data-value="${escape(a.id)}">已读</button></article>`).join('')||'<p class="companion-empty">暂时没有未读提醒，安心使用。</p>';}
-  root.CompanionView={labels,quotaMarkup,messageMarkup,percent};
+  function messageMarkup(alerts){return alerts.slice(0,50).map(a=>'<article class="companion-message"><div><p>'+escape(a.message)+'</p><small>'+time(a.at)+(a.active?'':' · 历史提醒')+'</small></div><button class="text-button" data-action="acknowledge" data-value="'+escape(a.id)+'">已读</button></article>').join('')||'<p class="companion-empty">暂时没有未读提醒。</p>';}
+  function canOpen(s,dirty){return !!(s.connected&&s.dashboard_ready&&(!dirty||['tracking','paused','history_error'].includes(s.state)));}
+  function tracking(s){
+    if(!s.connected)return ['正在连接后台','后台与看板服务启动后会自动连接'];
+    const collector=s.account?.usage_collector||{};
+    const logs=s.logs?.valid,quota=s.state==='tracking';
+    if(logs&&collector.running&&!collector.problem)return [quota?'日志与额度持续追踪中':'日志持续获取中',quota?'用量与额度历史自动更新':'无需登录即可查看本地用量'];
+    if(quota)return ['额度持续追踪中','已连接账号，额度历史自动更新'];
+    if(logs&&collector.problem)return ['日志获取异常','后台将自动重试，已有记录保留'];
+    if(logs)return ['日志已就绪',collector.running?'等待首次读取':'日志采集未运行'];
+    return [labels[s.state]||'等待配置','选择正确日志目录，或通过浏览器连接账号'];
+  }
+  root.CompanionView={labels,messageMarkup,canOpen,tracking};
   if(typeof document==='undefined')return;
   const $=id=>document.getElementById(id);
-  let last={},busy=false,timer,ready=false,stopped=false;
-  const icon=ok=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/>${ok?'<path d="m7.5 12 3 3 6-6"/>':'<path d="M12 7v6m0 3h.01"/>'}</svg>`;
+  let last={},busy=false,timer,logTimer,ready=false,stopped=false,dirty=false,revision=0;
   function setHTML(id,html){if($(id).innerHTML!==html)$(id).innerHTML=html;}
-  function theme(mode){document.body.classList.toggle('dark',mode==='dark'||mode==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.querySelectorAll('[data-action="theme"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.value===mode)));}
+  function text(id,value){$(id).textContent=value;$(id).title=value;}
   function render(s){
-    last=s; const account=s.account||{},prefs=s.preferences||{},state=s.state||'connecting',login=account.browser_login||{};
-    const [title,detail]=labels[state]||labels.error;
-    $('trackingTitle').textContent=title;$('trackingDetail').textContent=state==='offline'?detail:account.history_problem||account.problem?.message||detail;
-    setHTML('trackingIcon',icon(state==='tracking'));
-    $('serviceState').textContent=s.connected?(s.owned?'助手托管后台 · 运行中':'已连接现有后台'):'正在重新连接后台';
-    $('lastUpdated').textContent=account.fetched_at?'上次成功：'+time(account.fetched_at)+'（本机时间）':'等待首次成功采集';
-    $('accountLabel').textContent=[account.profile?.label||account.account?.label||'尚未连接账号',account.account?.plan].filter(Boolean).join(' · ');
-    $('loginButton').textContent=login.status==='starting'?'准备登录…':login.status==='waiting'?'继续浏览器登录':account.fetched_at?'切换账号':'浏览器登录';
+    last=s;const a=s.account||{},logs=s.logs||{},prefs=s.preferences||{},login=a.browser_login||{},collector=a.usage_collector||{};
+    const [title,detail]=tracking(s);text('trackingTitle',title);text('trackingDetail',detail);
+    $('trackingDot').classList.toggle('active',s.connected&&(s.state==='tracking'||logs.valid&&collector.running&&!collector.problem));
+    text('serviceState',s.connected?'后台与看板服务运行中':'正在连接后台与看板服务…');
+    text('version','v'+(s.version||''));
+    text('logState',dirty?'正在验证目录…':logs.valid?'已找到有效日志':'尚未找到有效日志');
+    text('logDetail',dirty?'验证通过后自动保存':logs.valid&&collector.last_scan?'上次获取：'+time(collector.last_scan)+' · 每 '+(collector.scan_interval_seconds||30)+' 秒更新':logs.message||'正在检测默认目录');
+    if(!dirty&&document.activeElement!==$('logPath'))$('logPath').value=logs.path||'';
+    const accountReady=['tracking','paused','history_error'].includes(s.state);
+    text('accountLabel',accountReady?(a.profile?.label||a.account?.label||'账号已连接'):(labels[s.state]||'尚未连接'));
+    const loginMessages={starting:'正在准备官方登录页面…',waiting:'请在浏览器完成登录，随后自动获取额度',failed:'登录未完成，请重试',expired:'登录已超时，请重试',cancelled:'已取消登录',success:'登录完成，正在获取额度'};
+    text('accountDetail',s.login_error||(accountReady?'上次额度：'+time(a.fetched_at):loginMessages[login.status]||a.problem?.message||'通过官方浏览器页面登录'));
+    $('loginButton').textContent=login.status==='waiting'?'继续登录':login.status==='starting'?'准备中…':accountReady?'切换账号':'浏览器登录';
+    $('loginButton').title=accountReady?'通过官方页面切换，会更新本机 Codex 登录账号':'通过官方浏览器页面登录';
     $('loginButton').disabled=busy||!s.connected||login.status==='starting';
-    $('refreshButton').disabled=busy||!s.connected||account.busy;
-    $('refreshButton').textContent=account.busy?'正在读取…':'刷新状态';
-    $('loginHelp').textContent=account.fetched_at?'切换账号会更新本机 Codex 登录，其他本机客户端也会受影响。':'通过官方浏览器页面登录，完成后自动追踪额度。';
-    const loginMessages={starting:'正在准备官方登录页面…',waiting:'请在默认浏览器完成官方登录；完成后自动获取额度。',success:'官方登录已完成，正在按新账号更新额度。',failed:'登录未完成，请重新发起浏览器登录。',expired:'本次登录已超时，请重试。',cancelled:'已取消本次登录，原有账号不受影响。'};
-    const loginText=s.login_error||(login.status==='success'&&state==='tracking'?'账号已连接，额度正在自动追踪。':loginMessages[login.status])||'';
-    $('loginProgress').hidden=!loginText;$('loginMessage').textContent=loginText;
     $('cancelLogin').hidden=!['starting','waiting'].includes(login.status);
-    setHTML('quotaWindows',quotaMarkup(account,state!=='tracking'&&state!=='history_error'));
-    const unread=(account.alerts||[]).filter(a=>!a.acknowledged);
+    $('refreshButton').disabled=busy||!s.connected;
+    document.querySelectorAll('.icon-button').forEach(b=>b.disabled=busy||!s.connected);
+    const allowed=canOpen(s,dirty);
+    $('dashboardButton').disabled=busy||!allowed;
+    $('dashboardGate').dataset.blocked=String(!allowed);
+    $('dashboardGate').title=allowed?'在默认浏览器打开完整用量看板':'需要正确日志目录或者登陆';
+    const unread=(a.alerts||[]).filter(a=>!a.acknowledged);
     $('messageCount').textContent=String(unread.length);setHTML('messages',messageMarkup(unread));
     $('notifications').checked=prefs.notifications!==false;$('notifications').disabled=busy||!s.tray_available;
     $('testNotification').disabled=busy||!s.tray_available||prefs.notifications===false;
-    $('notificationHint').textContent=s.notification_error||(!s.tray_available?'托盘不可用，消息仍会显示在这里。':'系统勿扰模式可能隐藏通知，消息中心仍会保留额度提醒。');
-    $('hideButton').hidden=!s.tray_available;
-    $('lifecycle').textContent=s.tray_available?'关闭窗口后收进托盘，后台继续追踪。':'请最小化窗口以继续追踪；关闭窗口会退出助手。';
-    $('quitDescription').textContent=s.owned?'退出后，本助手启动的后台将停止采集。收进托盘可以继续追踪。':'助手将退出，已经运行的独立后台服务会继续采集。';
-    $('version').textContent='Codex Usage '+(s.version||'');theme(prefs.theme||'system');
+    text('notificationHint',s.notification_error||(!s.tray_available?'托盘不可用，请在这里查看提醒':'低额度、消耗风险和连接异常会通过系统通知提醒。'));
+    text('lifecycle',s.tray_available?'关闭窗口后收进托盘，后台继续运行':'请最小化保持运行；关闭窗口会退出');
+    text('quitDescription',s.owned?'退出将停止本助手启动的后台与看板服务。关闭窗口可收进托盘继续运行。':'退出助手，现有独立后台服务仍会继续运行。');
+    document.body.classList.toggle('dark',window.matchMedia('(prefers-color-scheme: dark)').matches);
   }
-  function report(text){$('actionStatus').hidden=!text;$('actionStatus').textContent=text;}
+  function report(value){$('actionStatus').textContent=value;}
   async function poll(){
-    clearTimeout(timer);
-    if(stopped||!ready)return;
+    clearTimeout(timer);if(stopped||!ready)return;
     try{render(await window.pywebview.api.status());}catch(_){render({...last,state:'offline',connected:false});}
     if(!stopped)timer=setTimeout(poll,1500);
   }
+  function saveLogs(){clearTimeout(logTimer);if(!dirty||stopped)return;if(busy||!ready){logTimer=setTimeout(saveLogs,300);return;}action('logs',$('logPath').value);}
   async function action(name,value){
-    if(busy||!ready)return;busy=true;render(last);report('');
-    try{const result=await window.pywebview.api.action(name,value);if(!result.ok)report(result.error||'操作未完成，请重试。');else if(name==='test_notification')report('测试提醒已发送，请查看系统通知。');}
-    catch(_){report('助手暂时没有响应，请稍后重试。');}
-    finally{busy=false;await poll();}
+    if(busy||!ready)return;
+    const sentRevision=revision;busy=true;render(last);report('');
+    try{
+      const result=await window.pywebview.api.action(name,value);
+      if(name==='logs'&&result.retryable)return;
+      if(['logs','browse_logs','detect_logs'].includes(name)&&revision===sentRevision)dirty=false;
+      if(!result.ok)report(result.error||'操作未完成，请重试。');
+      else if(['logs','browse_logs','detect_logs'].includes(name))report('目录检测完成');
+      else if(name==='test_notification')report('测试提醒已发送');
+    }catch(_){report('助手暂时没有响应，请稍后重试。');}
+    finally{busy=false;await poll();if(dirty)logTimer=setTimeout(saveLogs,700);}
   }
-  document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(b)action(b.dataset.action,b.dataset.value);});
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(b&&!b.disabled)action(b.dataset.action,b.dataset.value);});
+  $('logPath').addEventListener('input',()=>{dirty=true;revision++;clearTimeout(logTimer);render(last);logTimer=setTimeout(saveLogs,700);});
+  $('logPath').addEventListener('blur',()=>{clearTimeout(logTimer);logTimer=setTimeout(saveLogs,150);});
+  $('logPath').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveLogs();}});
   $('notifications').addEventListener('change',e=>action('notifications',e.target.checked));
+  $('messagesButton').addEventListener('click',()=>$('messagesDialog').showModal());$('closeMessages').addEventListener('click',()=>$('messagesDialog').close());
   $('quitButton').addEventListener('click',()=>$('quitDialog').showModal());$('cancelQuit').addEventListener('click',()=>$('quitDialog').close());
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>theme(last.preferences?.theme||'system'));
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>render(last));
   function start(){if(ready)return;ready=true;poll();}
   window.addEventListener('pywebviewready',start);if(window.pywebview?.api)start();
-  window.addEventListener('beforeunload',()=>{stopped=true;clearTimeout(timer);});
+  window.addEventListener('beforeunload',()=>{stopped=true;clearTimeout(timer);clearTimeout(logTimer);});
 })(typeof globalThis==='undefined'?this:globalThis);

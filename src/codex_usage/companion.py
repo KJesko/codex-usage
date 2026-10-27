@@ -18,6 +18,7 @@ import webbrowser
 
 from . import __version__
 from .background_config import identity, load_launch
+from .companion_logs import inspect_logs
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -149,6 +150,8 @@ class CompanionController:
             saved = json.loads(self.preference_path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             saved = {}
+        if not isinstance(saved, dict):
+            saved = {}
         self.preferences = {'notifications': saved.get('notifications', True) is True,
                             'theme': saved.get('theme') if saved.get('theme') in ('system', 'light', 'dark') else 'system'}
         self.seen = list(saved.get('seen', []))[-256:] if isinstance(saved.get('seen'), list) else []
@@ -156,6 +159,43 @@ class CompanionController:
         self.failures = 0
         self.last_notice_state = None
         self.notification_error = ''
+        self.log_draft = None
+        self.logs = {'path': '', 'valid': False, 'message': '正在检测日志目录'}
+        self.log_checked = 0
+
+    def _check_logs(self, force=False):
+        if force or time.monotonic() - self.log_checked > 30:
+            settings = self.client.get('/api/settings')
+            sources = settings.get('sources') or []
+            source = self.log_draft if self.log_draft is not None else (sources[0] if sources else '')
+            self.logs = inspect_logs(source)
+            if self.log_draft is not None:
+                self.logs['valid'] = False
+            self.log_checked = time.monotonic()
+        return dict(self.logs)
+
+    def _set_logs(self, path):
+        checked = inspect_logs(path)
+        with self.lock:
+            self.log_draft = path
+            self.logs = {**checked, 'valid': False}
+            self.log_checked = time.monotonic()
+        if not checked['valid']:
+            return {'ok': False, 'error': checked['message']}
+        settings = self.client.get('/api/settings')
+        # The compact helper edits the primary local root; keep additional roots
+        # configured in the detailed dashboard intact.
+        sources = list(dict.fromkeys([checked['path'], *(settings.get('sources') or [])[1:]]))
+        self.client.post('/api/settings/patch', {'sources': sources})
+        with self.lock:
+            self.log_draft = None
+            self.logs = {**checked, 'message': '日志目录已验证并保存'}
+        self.wake.set()
+        return {'ok': True}
+
+    def dashboard_ready(self):
+        return bool(self.snapshot.get('connected') and
+                    (self.logs.get('valid') or self.snapshot.get('state') in ('tracking', 'paused', 'history_error')))
 
     def _save(self):
         self.preference_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +234,7 @@ class CompanionController:
         try:
             account = self.client.get('/api/account')
             state = tracking_state(account)
+            self._check_logs()
             with self.lock:
                 self.failures = 0
                 login = account.get('browser_login') or {}
@@ -209,7 +250,7 @@ class CompanionController:
                 # Authorization URLs never enter the GUI or persisted preferences.
                 # The helper does not need large pace/cycle/reset-history payloads.
                 account = {key: account[key] for key in ('account', 'profile', 'fetched_at', 'collector',
-                           'windows', 'alerts', 'signed_out', 'busy', 'stale', 'problem', 'history_problem') if key in account}
+                           'windows', 'alerts', 'signed_out', 'busy', 'stale', 'problem', 'history_problem', 'usage_collector') if key in account}
                 account['browser_login'] = {k: v for k, v in login.items() if k != 'url'}
                 self.snapshot = {'state': state, 'account': account, 'connected': True,
                                  'login_error': login_error, 'checked_at': datetime.now(timezone.utc).isoformat()}
@@ -246,17 +287,37 @@ class CompanionController:
     def status(self):
         with self.lock:
             return {**self.snapshot, 'preferences': dict(self.preferences), 'version': __version__,
+                    'logs': dict(self.logs), 'dashboard_ready': self.dashboard_ready(),
                     'owned': self.service.owned, 'url': self.client.url,
                     'tray_available': self.tray is not None, 'notification_error': self.notification_error}
 
     def action(self, name, value=None):
         if not self.operation_lock.acquire(blocking=False):
-            return {'ok': False, 'error': '正在处理，请稍候。'}
+            return {'ok': False, 'retryable': True, 'error': '正在处理，请稍候。'}
         try:
             if name == 'dashboard':
+                # Tray and native bridge obey the same gate as the visible button.
+                self.client.verify()
+                self._check_logs(force=True)
+                account = self.client.get('/api/account')
+                with self.lock:
+                    self.snapshot.update(connected=True, state=tracking_state(account))
+                if not self.dashboard_ready():
+                    return {'ok': False, 'error': '需要正确日志目录或者登陆'}
                 view = value if value in ('overview', 'quota', 'settings') else 'overview'
                 if not self.open_browser(self.client.url + '/?' + urlencode({'view': view})):
                     raise OSError('无法打开默认浏览器，请检查系统浏览器设置。')
+            elif name in ('logs', 'detect_logs', 'browse_logs'):
+                if name == 'detect_logs':
+                    settings = self.client.get('/api/settings')
+                    value = settings.get('setup', {}).get('default_source', '')
+                elif name == 'browse_logs':
+                    from webview import FileDialog
+                    selected = self.window.create_file_dialog(FileDialog.FOLDER, directory=self.logs.get('path', ''))
+                    if not selected:
+                        return {'ok': True}
+                    value = selected[0]
+                return self._set_logs(value)
             elif name == 'login':
                 with self.lock:
                     current = self.client.get('/api/account').get('browser_login') or {}
@@ -274,6 +335,7 @@ class CompanionController:
                     self.opened_login = None
                 self.wake.set()
             elif name == 'refresh':
+                self.log_checked = 0
                 self.client.post('/api/account/refresh')
                 self.wake.set()
             elif name == 'acknowledge':
