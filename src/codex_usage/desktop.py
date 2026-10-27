@@ -167,7 +167,7 @@ def main(argv=None):
             if args.gui_test:
                 controller.preferences['notifications'] = False
             window = webview.create_window(TITLE, html=companion_html(), js_api=CompanionBridge(controller),
-                                           width=600, height=460, min_size=(480, 460), text_select=True,
+                                           width=600, height=460, min_size=(600, 460), resizable=False, text_select=True,
                                            background_color="#f5f3ee")
             controller.window = window
             window.events.closing += controller.closing
@@ -197,10 +197,15 @@ def main(argv=None):
                             if (result.get('bridge') and __version__ in result.get('version', '')
                                     and controller.status()['connected'] and (sys.platform != 'win32' or controller.tray)):
                                 result['tray_available'] = controller.tray is not None
+                                result['fixed_size'] = not window.resizable
+                                if sys.platform == 'win32':
+                                    result['fixed_size'] = (result['fixed_size']
+                                        and str(window.native.FormBorderStyle) == 'FixedSingle'
+                                        and not window.native.MaximizeBox)
                                 result['close_hides'] = controller.closing() is False if controller.tray else None
                                 if controller.tray:
                                     controller.show()
-                                result['ok'] = not result['overflow'] and not result['vertical_overflow'] and result['buttons'] >= 7 and result['gate'] == controller.dashboard_ready()
+                                result['ok'] = result['fixed_size'] and not result['overflow'] and not result['vertical_overflow'] and result['buttons'] >= 7 and result['gate'] == controller.dashboard_ready()
                                 break
                             time.sleep(.5)
                     finally:
