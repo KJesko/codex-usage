@@ -1416,5 +1416,21 @@
   "开源与许可证": "Open source & license",
   "采用 ": "Licensed under ",
   "。项目来源见 ": ". Project origins are documented in ",
-  "项目来源见 ": "Project origins are documented in "
+  "项目来源见 ": "Project origins are documented in ",
+  "后重启后台，再点击浏览器登录。": ", restart the backend, then select Browser sign-in.",
+  "在官方页面完成登录；如果新标签页没有打开，点击": "Complete sign-in on the official page. If the new tab did not open, select ",
+  "在新标签页打开官方登录页面。": " to open the official sign-in page in a new tab.",
+  "安装、网络和本机回调端口。": " installation, network and local callback port.",
+  "安装、网络或本机登录回调端口，然后重新点击浏览器登录。": " installation, network or local sign-in callback port, then select Browser sign-in again.",
+  "点击": "Select ",
+  "登录会更新本机 ": "Sign-in updates the local ",
+  "登录完成后回到看板，额度会自动获取和更新，无需再次连接。": "Return to the dashboard after signing in. Quota is fetched and updated automatically, with no separate reconnect step.",
+  "登录已失效，请点击浏览器登录，在官方页面完成登录。": "Authentication expired. Select Browser sign-in and complete sign-in on the official page.",
+  "登录未完成时可取消或重试；无法打开登录页时，请检查 ": "You can cancel or retry an unfinished sign-in. If the page will not open, check the ",
+  "登录未完成，请重新点击浏览器登录。": "Sign-in did not complete. Select Browser sign-in again.",
+  "等待首次额度读取；如尚未登录，请点击浏览器登录。": "Waiting for the first quota reading. If you have not signed in, select Browser sign-in.",
+  "继续。": " to continue.",
+  "账号；更改日志目录不会切换账号。无需在终端登录，也无需向看板填写密码或 ": " account; changing log folders does not switch accounts. No terminal sign-in is needed, and you do not enter passwords or ",
+  "连接已中断，看板会自动重试；也可在额度页面刷新。": "Connection interrupted. The dashboard will retry automatically; you can also refresh on the quota page.",
+  "账号邮箱优先使用本机登录信息，立即脱敏显示；没有可用信息时才单独查询一次，不定时查询。读取失败时可在额度页面点击刷新重试，无需重新登录。": "Account email uses local sign-in information first and is masked immediately. Only when unavailable is it queried once, without polling. If lookup fails, select Refresh on the quota page to retry without signing in again."
 }

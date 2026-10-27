@@ -43,7 +43,7 @@ Open the [local dashboard](http://127.0.0.1:8787). For startup problems, see [Tr
 ## First use
 
 1. **Connect token logs:** in **Data & settings**, enter your Codex home directory (normally `~/.codex`), save, then view projects and sessions. Log reporting does not require quota sign-in.
-2. **Connect account quota (optional):** reuse local Codex ChatGPT authentication or follow [Account connection](docs/SETUP.en.md#account-connection). Confirm a recent successful quota timestamp.
+2. **Connect account quota (optional):** select **Browser sign-in** in the dashboard and complete the official authorization page using [Account connection](docs/SETUP.en.md#account-connection). Existing valid authentication does not require another sign-in. Confirm a recent successful quota timestamp.
 3. **Keep collection running:** closing the page leaves the backend running; stopping the service, sleeping or shutting down interrupts collection. Windows users can enable sign-in startup and crash recovery using [Background operation](docs/SETUP.en.md#windows-background-operation).
 
 ## Documentation

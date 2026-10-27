@@ -2,6 +2,8 @@
 
 ## Unreleased — web/source only
 
+- 网页版账号登录统一为官方浏览器登录：移除终端登录指引与引导卡片的重复连接按钮，登录完成后自动获取额度；失败后通过额度页刷新重试。Unify web sign-in through the official browser flow, remove terminal sign-in guidance and the onboarding reconnect button, and retain automatic quota refresh.
+
 - 精简仓库根目录：文档归入 docs，贡献与安全指南归入 .github，桌面入口与构建文件归入 packaging；更新链接和源码包清单，网页版启动方式不变。Organize documentation, community guides and desktop packaging files into their respective folders while preserving web launch commands.
 
 - 移除闲置的旧看板源码、Claude 插件与演示素材；项目来源统一记录在 README，保留原有 MIT 版权与许可声明。Remove unused legacy dashboard code, Claude plugin files and demo assets; consolidate project origins in README while preserving MIT notices.

@@ -84,13 +84,11 @@ On first launch, the default URL opens **Data & settings** until settings are sa
 
 **Token logs and live quota are separate connections.** Changing log folders does not switch the quota account. Browser-only ChatGPT sign-in and API-key access are not equivalent to local Codex subscription authentication.
 
-### Reuse local Codex authentication
+### Start official browser sign-in from the dashboard
 
-Run `codex login status` under the same OS user, `CODEX_HOME` and network environment as the dashboard. If signed in, choose **Reconnect quota**. Otherwise run `codex login` and complete official ChatGPT sign-in yourself. Verify a successful quota status and recent timestamp; login success or stale cache alone is insufficient.
+Open **Data & settings → Getting started → Browser sign-in**. The dashboard opens the official sign-in page in a new tab on the same computer. Complete authentication there; quota is fetched and updated automatically without a separate reconnect step. If the browser blocks the new tab, select **Open official sign-in page** to continue. **This updates the local Codex account and may affect other Codex clients under the same OS user.**
 
-### Start official sign-in from the dashboard
-
-Open **Data & settings → Getting started → Browser sign-in**, then **Open official sign-in page** when the link is ready. Complete the flow in a new tab on the same computer. The dashboard requests quota afterward. **This updates the local Codex account and may affect other Codex clients under the same OS user.**
+This is the web dashboard's only sign-in method; no terminal login command is needed. Existing valid authentication continues to supply quota without another sign-in. Verify the successful quota status and recent timestamp, rather than login success or stale cache alone.
 
 No Session, Cookie or Token copying is required. The authorization URL is kept temporarily in memory; Codex handles credential storage and refresh. The flow expires after five minutes. Cancelling stops only the pending login, not the existing account session. On failure, check the Codex version, backend network/proxy and local callback-port conflicts.
 
@@ -98,11 +96,11 @@ No Session, Cookie or Token copying is required. The authorization URL is kept t
 
 Set `CODEX_USAGE_CLI` to the absolute native Codex executable path: `codex.exe` on Windows, not a `.cmd` or `.bat` wrapper. Restart the backend; refreshing the page does not update the backend environment.
 
-Custom `CODEX_HOME` must match between login and the backend. Enabling Windows supervision saves these two path overrides. If they change later, configure supervision again from the new environment. Other temporary environment variables, including proxies, are not copied automatically.
+Official browser sign-in is initiated by the dashboard backend and uses its `CODEX_HOME`. Enabling Windows supervision saves these two path overrides. If they change later, configure supervision again from the new environment. Other temporary environment variables, including proxies, are not copied automatically.
 
 Quota is collected every 60 seconds by default. Failure does not prevent token reporting. The dashboard does not directly read or copy `auth.json` / OAuth tokens, request passwords or API keys, or perform purchases, conversations or quota resets. Email lookup is independent of quota collection.
 
-Quota and reset cards share one request. Slow responses may take up to 90 seconds; no duplicate request is sent while one is pending. After three consecutive service/routing failures, the next collection establishes a new connection. Email is read once after login or a detected account change, with a separate 30-second timeout. Only the masked label is cached locally, isolated by account and reused after restart, without polling. Reconnect quota manually to retry a failed lookup. Expand the collection status to see the specific error and last request duration. A timeout does not mean the login expired; sign in again only when authentication is explicitly reported as expired. Old quota/card values stay marked as the previous result and are not saved as new observations.
+Quota and reset cards share one request. Slow responses may take up to 90 seconds; no duplicate request is sent while one is pending. After three consecutive service/routing failures, the next collection establishes a new connection. Email is read once after login or a detected account change, with a separate 30-second timeout. Only the masked label is cached locally, isolated by account and reused after restart, without polling. Use **Refresh** on the **Quota & resets** page to retry a failed lookup. Expand the collection status to see the specific error and last request duration. A timeout does not mean the login expired; sign in again only when authentication is explicitly reported as expired. Old quota/card values stay marked as the previous result and are not saved as new observations.
 
 ## Configuration & startup options
 
@@ -189,7 +187,7 @@ Verify downloads against `SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256`,
 | Page cannot open or port is busy | Keep the startup terminal running and use the printed URL. Default: `http://127.0.0.1:8787`; use `--port 8790` if needed, without killing an unknown process |
 | No tokens appear | Check the Codex home folder, actual usage events, date/source/model filters and statistics start date. Complete a local session and wait for scanning. Cloud-only history may have no local logs |
 | Codex is in WSL but the dashboard is in Windows | Their homes, executables and authentication differ. Prefer running both in the same environment; reading another environment's logs does not connect its quota account |
-| Browser sign-in works but quota does not | Verify local Codex ChatGPT authentication, native executable, backend network/proxy and a recent successful quota timestamp |
+| Browser sign-in works but quota does not | Use the dashboard's Browser sign-in to complete official authorization; signing in to an ordinary ChatGPT tab is not the same authorization. Check the native executable, backend network/proxy and a recent successful quota timestamp |
 | Terminal Codex works but the dashboard cannot find it | On Windows a `.cmd` wrapper is insufficient. Point CODEX_USAGE_CLI at the native executable; restart the backend after changing its environment, not just the webpage |
 | Automatic startup is enabled but collection stops | Check server/supervisor status and last successful collection. The supervisor may wait for a foreground server to exit before taking over. Sleep, shutdown and signed-out sessions interrupt collection. Verify the displayed address/data folder and distinguish waiting for takeover from a port conflict |
 

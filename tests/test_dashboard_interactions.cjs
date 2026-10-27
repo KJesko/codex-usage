@@ -182,6 +182,29 @@ test('settings writes queue independent patches and never send full stale settin
   assert.equal(vm.runInContext('settings.avatar_initials',app.context),'AB');
 });
 
+test('onboarding offers only browser sign-in and starts official authorization without a reconnect request',async()=>{
+  const app=dashboard();
+  vm.runInContext(`
+    settings={csrf:'test-token'};
+    this.opened=[];this.polls=0;
+    window.open=(url)=>{opened.push(url);return {closed:false,document:{body:{}},location:{replace(){}}};};
+    renderAccount=()=>{};refreshAccount=()=>{polls++;};
+  `,app.context);
+  const markup=app.context.setupPanel();
+  assert.equal((markup.match(/data-browser-login/g)||[]).length,1);
+  assert.doesNotMatch(markup,/data-refresh-quota|codex login|重新连接额度/);
+  await app.click({dataset:{browserLogin:''}});
+  assert.deepEqual(Array.from(app.context.opened),['about:blank']);
+  assert.equal(app.pending.length,1);
+  assert.equal(app.pending[0].url,'/api/account/login');
+  assert.equal(app.pending[0].options.method,'POST');
+  assert.equal(app.pending[0].options.headers['X-CSRF-Token'],'test-token');
+  app.pending[0].resolve({ok:true,json:async()=>({status:'starting'})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(app.context.polls,1,'authorization starts account polling automatically');
+  assert.equal(app.pending.length,1,'no separate reconnect request is sent');
+});
+
 test('login keeps polling in a background page and navigates the reserved tab',async()=>{
   const app=dashboard();
   vm.runInContext(`
