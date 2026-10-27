@@ -2,6 +2,8 @@
 pywebview==6.2.1
 pyinstaller==6.22.3
 pillow==12.3.0
+pystray==0.19.5
+six==1.17.0
 # Lock transitive dependencies for repeatable Windows builds.
 altgraph==0.17.5
 bottle==0.13.4

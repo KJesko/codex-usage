@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — web/source only
+## Unreleased
+
+- 新增独立 Windows 后台助手：官方浏览器账号连接、实时额度追踪状态、浏览器详细看板、托盘常驻和消息提醒。自动复用相同数据目录的现有服务；退出只停止自己启动的后台。界面沿用网页版样式，支持浅色、深色和跟随系统。Add a native Windows background companion with official browser sign-in, tracking status, dashboard shortcuts, tray operation and deduplicated system notifications. Reuse existing services and stop only an owned backend on exit.
 
 - 网页版账号登录统一为官方浏览器登录：移除终端登录指引与引导卡片的重复连接按钮，登录完成后自动获取额度；失败后通过额度页刷新重试。Unify web sign-in through the official browser flow, remove terminal sign-in guidance and the onboarding reconnect button, and retain automatic quota refresh.
 

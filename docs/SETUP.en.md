@@ -163,6 +163,26 @@ Disabling in the web UI leaves the current server running but removes future rec
 
 Closing the page does not stop collection. A foreground server can be stopped with `Ctrl+C`. Startup requires a signed-in Windows user; sleep, shutdown and signed-out sessions interrupt collection. macOS/Linux have no built-in service installer, so keep the process running. Missing quota observations are not reconstructed.
 
+## Standalone background companion (Windows)
+
+The development source includes a compact native window. Detailed analytics open in your default browser. From the project directory:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r packaging/requirements-desktop.txt
+.venv\Scripts\pythonw.exe packaging/codex_usage_desktop.py
+```
+
+An installed package also provides `codex-usage-desktop`. Run `packaging/build-windows.ps1` to build `dist/CodexUsage.exe`. Windows WebView2 is required. The existing v1.3.0 web release remains unchanged.
+
+- **Account:** official browser sign-in updates the local Codex account and automatically fetches quota. No terminal sign-in is required.
+- **Tracking:** recent successful collection, collector activity and history storage are checked independently. Stale values never appear as healthy tracking.
+- **Messages:** quota alerts and read state are shared with the web dashboard. Native notifications can be toggled and tested; delivery IDs are persisted to prevent duplicates. Windows Do Not Disturb may suppress banners, while alerts remain in the message center.
+- **Lifecycle:** closing the window hides it in the tray and keeps collection running. Minimize if the tray is unavailable. Explicit exit stops only a backend started by this companion; an existing independent service remains running.
+- **Reuse:** the saved background port is used, or 8787 by default. The service identity and data directory must match before attachment. If offline, a local backend is started. For custom instances pass `--port 8790 --data-dir "D:\CodexUsageData"`. Do not run different ports against the same data directory concurrently.
+- **Appearance:** the companion uses the web stylesheet and light/dark/system modes. Preferences live in `companion-preferences.json` in the data directory. Browser-specific custom fonts/accent settings are not automatically synchronized across storage profiles.
+
+Companion auto-start is not installed automatically. Existing web-background startup settings are preserved. Native notifications require the companion to remain running; a separate backend can still store alerts after it exits. The GUI is currently targeted and validated on Windows.
+
 ## Upgrade & backup
 
 1. Disable Windows automatic protection, if enabled, using `scripts/enable-web-background.ps1 -Disable` from the old installation, and wait for the service to exit. Stop a manually launched server with Ctrl+C.

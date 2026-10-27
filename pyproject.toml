@@ -18,7 +18,7 @@ Repository = "https://github.com/KJesko/codex-usage"
 Issues = "https://github.com/KJesko/codex-usage/issues"
 
 [project.optional-dependencies]
-desktop = ["pywebview==6.2.1"]
+desktop = ["pywebview==6.2.1", "pystray==0.19.5", "pillow==12.3.0"]
 
 [project.scripts]
 codex-usage = "codex_usage.app:main"

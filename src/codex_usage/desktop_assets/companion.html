@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Codex Usage · 后台助手</title>
+  <style>/* SHARED_STYLE */
+/* COMPANION_STYLE */</style>
+</head>
+<body class="companion">
+<header class="companion-header"><div class="companion-brand"><span class="brand-mark" aria-hidden="true">&gt;_</span><strong>Codex Usage</strong><span class="companion-tag">后台助手</span></div><button class="button" data-action="dashboard" data-value="overview">打开详细看板 <span aria-hidden="true">↗</span></button></header>
+<main class="companion-main">
+  <section class="tracking-hero" aria-labelledby="trackingTitle">
+    <div class="tracking-icon" id="trackingIcon" aria-hidden="true"></div>
+    <div class="tracking-copy"><div class="eyebrow">额度追踪</div><h1 id="trackingTitle">正在连接后台</h1><p id="trackingDetail">正在确认采集服务和最近一次成功记录。</p></div>
+    <button class="button" id="refreshButton" data-action="refresh">刷新状态</button>
+  </section>
+  <div class="companion-facts"><span id="serviceState">连接中</span><span id="lastUpdated">等待首次更新</span></div>
+  <section class="companion-card" aria-labelledby="accountTitle">
+    <div class="companion-row"><div class="account-heading"><div class="companion-avatar" aria-hidden="true">CU</div><div><h2 id="accountTitle">账号连接</h2><p id="accountLabel">等待连接状态</p></div></div><button class="button" id="loginButton" data-action="login">浏览器登录</button></div>
+    <p class="companion-note" id="loginHelp">通过官方浏览器页面登录，完成后自动追踪额度。</p>
+    <div class="login-progress" id="loginProgress" role="status" hidden><span id="loginMessage"></span><button class="text-button" id="cancelLogin" data-action="cancel_login" hidden>取消登录</button></div>
+    <div class="companion-quotas" id="quotaWindows"><p class="companion-empty">成功获取额度后，将在这里显示剩余额度和重置时间。</p></div>
+  </section>
+  <section class="companion-card" aria-labelledby="messagesTitle">
+    <div class="companion-row"><h2 id="messagesTitle">消息中心 <span class="companion-count" id="messageCount">0</span></h2><button class="text-button" data-action="dashboard" data-value="quota">查看额度详情 ↗</button></div>
+    <div id="messages" class="companion-messages" role="region" aria-label="额度提醒" tabindex="0"><p class="companion-empty">暂时没有未读提醒，安心使用。</p></div>
+    <div class="companion-row notification-row"><div><label for="notifications">系统消息提醒</label><p class="companion-note">低额度、消耗风险和连接异常；相同提醒不会重复弹出。</p></div><input id="notifications" type="checkbox" role="switch" aria-label="系统消息提醒"></div>
+    <div class="notification-foot"><p class="companion-note" id="notificationHint">系统勿扰模式可能隐藏通知，消息中心仍会保留额度提醒。</p><button class="text-button" data-action="test_notification" id="testNotification">发送测试提醒</button></div>
+  </section>
+  <section class="companion-card preferences-card"><div class="companion-row"><h2>外观</h2><div class="companion-segment" role="group" aria-label="主题模式"><button data-action="theme" data-value="light" aria-pressed="false">浅色</button><button data-action="theme" data-value="dark" aria-pressed="false">深色</button><button data-action="theme" data-value="system" aria-pressed="true">跟随系统</button></div></div></section>
+  <p id="actionStatus" class="companion-action-status" role="status" hidden></p>
+</main>
+<footer class="companion-footer"><div><span id="version">Codex Usage</span><p id="lifecycle">关闭窗口后收进托盘，后台继续追踪。</p></div><div class="footer-actions"><button class="text-button" data-action="hide" id="hideButton">收进托盘</button><button class="text-button" id="quitButton">退出助手</button></div></footer>
+<dialog id="quitDialog"><h2>退出后台助手？</h2><p id="quitDescription"></p><div class="quit-actions"><button class="button" id="cancelQuit">取消</button><button class="button primary" data-action="quit">退出</button></div></dialog>
+<script>/* COMPANION_SCRIPT */</script>
+</body>
+</html>

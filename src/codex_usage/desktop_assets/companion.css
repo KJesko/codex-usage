@@ -1,0 +1,65 @@
+.companion { font-size:15px; }
+.companion-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:20px 26px; border-bottom:1px solid var(--line); }
+.companion-brand { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.companion-tag { font-size:11px; color:var(--muted); border-left:1px solid var(--line); padding-left:10px; }
+.companion .button { padding:9px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg); white-space:nowrap; font-size:13px; }
+.companion .button:hover { background:var(--soft); }
+.companion .button.primary { background:var(--accent); color:#1d1b16; border-color:var(--accent); }
+.companion .text-button { font-size:12px; padding:5px; color:var(--accent-ink); white-space:nowrap; }
+.companion-main { padding:28px 26px 16px; max-width:940px; margin:auto; }
+.tracking-hero { display:flex; align-items:center; gap:16px; }
+.tracking-icon { width:52px; height:52px; border-radius:16px; background:var(--accent-soft); color:var(--accent-ink); display:grid; place-items:center; flex-shrink:0; }
+.tracking-icon svg { width:28px; height:28px; }
+.tracking-copy { flex:1; min-width:0; }
+.tracking-copy h1 { font-size:25px; margin:3px 0 5px; letter-spacing:0; }
+.tracking-copy p { font-size:12px; color:var(--muted); line-height:1.7; }
+.eyebrow { color:var(--accent-ink); font-size:11px; }
+.companion-facts { display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; margin:18px 0 24px; padding:10px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; }
+#serviceState:before { content:''; display:inline-block; width:6px; height:6px; margin-right:6px; border-radius:50%; background:var(--accent); }
+.companion-card { border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; background:var(--surface); }
+.companion-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.companion-row h2 { font-size:15px; }
+.account-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.account-heading>div:last-child { min-width:0; }
+.account-heading p { font-size:12px; color:var(--muted); overflow-wrap:anywhere; margin-top:3px; }
+.companion-avatar { width:38px; height:38px; border-radius:50%; background:#a94136; color:white; display:grid; place-items:center; flex-shrink:0; font-size:13px; }
+.companion-note { font-size:11px; color:var(--muted); line-height:1.7; margin-top:10px; }
+.login-progress { display:flex; gap:10px; align-items:center; justify-content:space-between; background:var(--accent-soft); padding:10px 12px; border-radius:8px; font-size:12px; margin-top:12px; }
+.companion-quotas { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:18px; max-height:280px; overflow:auto; }
+.companion-quota { padding:14px; border-radius:10px; background:var(--hover); }
+.companion-quota header { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.companion-quota h3 { font-size:12px; font-weight:400; }
+.companion-quota strong { font:500 24px var(--font-mono); }
+.companion-quota strong small { font-size:12px; }
+.companion-quota .quota-track { margin:10px 0 7px; height:5px; background:var(--line); border-radius:5px; overflow:hidden; }
+.companion-quota .quota-track span { display:block; height:100%; background:var(--accent); }
+.companion-quota p { font-size:10px; color:var(--muted); }
+.companion-empty { grid-column:1/-1; color:var(--muted); font-size:12px; padding:12px 0; }
+.companion-count { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; background:var(--soft); border-radius:6px; font:11px var(--font-mono); margin-left:5px; }
+.companion-messages { max-height:190px; overflow-y:auto; scrollbar-width:thin; margin:12px 0; }
+.companion-message { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+.companion-message:first-child { border-top:0; }
+.companion-message>div { flex:1; min-width:0; }
+.companion-message p { font-size:12px; overflow-wrap:anywhere; }
+.companion-message small { color:var(--muted); font-size:10px; }
+.notification-row { border-top:1px solid var(--line); padding-top:14px; }
+.notification-row label { font-size:13px; }
+.notification-row p { margin-top:3px; }
+.notification-row input { appearance:none; flex-shrink:0; width:34px; height:20px; border-radius:14px; background:var(--line); position:relative; cursor:pointer; border:0; }
+.notification-row input:checked { background:var(--accent); }
+.notification-row input:before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:var(--bg); border-radius:50%; transition:transform .15s; }
+.notification-row input:checked:before { transform:translateX(14px); }
+.notification-foot { display:flex; gap:10px; justify-content:space-between; align-items:center; }
+.notification-foot .companion-note { flex:1; }
+.companion-segment { display:flex; border:1px solid var(--line); border-radius:8px; padding:3px; gap:2px; }
+.companion-segment button { font-size:12px; border-radius:5px; padding:5px 10px; }
+.companion-segment button[aria-pressed=true] { background:var(--accent-soft); color:var(--accent-ink); }
+.companion-footer { max-width:940px; margin:auto; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 26px 20px; font-size:10px; color:var(--muted); }
+.companion-footer p { margin-top:3px; }
+.footer-actions { display:flex; gap:10px; }
+.companion-action-status { border-radius:8px; padding:10px 14px; font-size:12px; background:var(--accent-soft); color:var(--accent-ink); }
+.companion dialog { max-width:440px; font-size:13px; }
+.companion dialog p { margin:14px 0; }
+.quit-actions { display:flex; gap:12px; justify-content:flex-end; }
+@media(max-width:580px) { .companion-header { padding:16px; align-items:flex-start; } .companion-tag { display:none; } .companion-main { padding:22px 16px 12px; } .tracking-hero { flex-wrap:wrap; } .tracking-copy { min-width:200px; } .tracking-hero>.button { margin-left:68px; } .companion-card { padding:16px; } .companion-footer { padding:0 16px 16px; flex-wrap:wrap; } .companion-quotas { gap:10px; } .notification-foot { align-items:flex-start; flex-direction:column; } }
+@media(prefers-reduced-motion:reduce) { .companion * { transition:none !important; } }

@@ -6,6 +6,7 @@ root = Path(SPECPATH).resolve().parent
 data = collect_data_files('tzdata') + [
     (str(root / 'src/codex_usage/static'), 'codex_usage/static'),
     (str(root / 'src/codex_usage/locales'), 'codex_usage/locales'),
+    (str(root / 'src/codex_usage/desktop_assets'), 'codex_usage/desktop_assets'),
     (str(root / 'src/codex_usage/prices.json'), 'codex_usage'),
     (str(root / 'src/codex_usage/reader.py'), 'codex_usage'),
     (str(root / 'src/codex_usage/remote_collector.txt'), 'codex_usage'),
@@ -14,9 +15,9 @@ data = collect_data_files('tzdata') + [
     (str(root / 'build/THIRD-PARTY-LICENSES.txt'), 'licenses'),
 ]
 a = Analysis([str(root / 'packaging/windows_entry.py')], pathex=[str(root / 'src')],
-             binaries=[], datas=data, hiddenimports=['webview.platforms.edgechromium'],
+             binaries=[], datas=data, hiddenimports=['webview.platforms.edgechromium', 'pystray._win32'],
              hookspath=[], hooksconfig={}, runtime_hooks=[],
-             excludes=['tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'gi', 'PIL'],
+             excludes=['tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'gi'],
              noarchive=False, optimize=0)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='CodexUsage',

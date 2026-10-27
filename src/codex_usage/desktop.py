@@ -1,4 +1,4 @@
-"""Native Windows host for the same local, read-only Codex dashboard."""
+"""Native background companion, sharing the dashboard's local service and style."""
 import argparse
 import ctypes
 import hashlib
@@ -14,7 +14,7 @@ from urllib.request import urlopen
 from . import __version__
 from .app import Application, STATIC, make_server
 
-TITLE = "Codex Usage"
+TITLE = "Codex Usage · 后台助手"
 DEFAULT_PORT = 17887
 
 
@@ -90,6 +90,8 @@ def self_test(app, output):
         assert health["app"] == "codex-usage"
         for path in ("/", "/app.js", "/style.css", "/icon.svg"):
             assert get(path), f"Empty bundled resource: {path}"
+        from .companion import companion_html
+        assert 'companion-main' in companion_html()
         data = json.loads(get("/api/data?range=all"))
         total = data["summary"]["total"]
         for dimension in ("timeline", "projects", "sessions", "models"):
@@ -133,6 +135,8 @@ def main(argv=None):
     parser.add_argument("--data-dir", default=str(Path.home() / ".codex-usage"))
     parser.add_argument("--codex-home", action="append")
     parser.add_argument("--timezone")
+    parser.add_argument("--port", type=int, help="Existing service port (defaults to saved background profile or 8787)")
+    parser.add_argument("--gui-test", metavar="RESULT_JSON", help="Verify the native GUI and bridge, then exit")
     parser.add_argument("--self-test", metavar="RESULT_JSON", help="Check packaged assets and data, then exit")
     args = parser.parse_args(argv)
     data_dir = Path(args.data_dir).expanduser().resolve()
@@ -146,32 +150,77 @@ def main(argv=None):
                 instance.activate_existing()
                 return 0
         configure_logging(data_dir)
-        app = Application(data_dir, args.codex_home, args.timezone)
         if args.self_test:
+            app = Application(data_dir, args.codex_home, args.timezone)
             self_test(app, args.self_test)
             return 0
+        from .companion import CompanionBridge, CompanionController, CompanionService, companion_html
         import webview
-        webview.settings["ALLOW_DOWNLOADS"] = True
+        webview.settings["ALLOW_DOWNLOADS"] = False
         webview.settings["ALLOW_FILE_URLS"] = False
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         if sys.platform == "win32":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CodexUsage.Desktop.1")
-        with DesktopServer(app) as backend:
-            logging.info("Starting Codex Usage %s at %s", __version__, backend.url)
-            webview.create_window(TITLE, backend.url, width=1360, height=900,
-                                  min_size=(900, 600), text_select=True,
-                                  background_color="#f6f7f3")
-            webview.start(gui="edgechromium" if sys.platform == "win32" else None,
-                          private_mode=False, storage_path=str(data_dir / "webview"),
-                          icon=str(STATIC / "icon.ico"),
-                          localization={"global.saveFile": "导出 CSV", "global.cancel": "取消",
-                                        "global.ok": "确定", "windows.fileFilter.allFiles": "所有文件"})
-        logging.info("Desktop window closed; local server stopped")
+        with CompanionService(data_dir, args.port, args.codex_home, args.timezone) as service:
+            logging.info("Starting companion %s (owned backend: %s)", __version__, service.owned)
+            controller = CompanionController(service)
+            if args.gui_test:
+                controller.preferences['notifications'] = False
+            window = webview.create_window(TITLE, html=companion_html(), js_api=CompanionBridge(controller),
+                                           width=760, height=880, min_size=(480, 600), text_select=True,
+                                           background_color="#f5f3ee")
+            controller.window = window
+            window.events.closing += controller.closing
+            def ready():
+                if sys.platform == 'win32':
+                    try:
+                        import pystray
+                        from PIL import Image
+                        tray = pystray.Icon('CodexUsage', Image.open(STATIC / 'icon.ico'), TITLE,
+                            menu=pystray.Menu(
+                                pystray.MenuItem('打开后台助手', lambda: controller.show(), default=True),
+                                pystray.MenuItem('打开详细看板', lambda: controller.action('dashboard')),
+                                pystray.MenuItem('退出助手' + ('并停止采集' if service.owned else ''), lambda: controller.quit())))
+                        def tray_ready(icon):
+                            icon.visible = True
+                            controller.tray = icon
+                        tray.run_detached(setup=tray_ready)
+                    except Exception:
+                        logging.exception('Tray unavailable; keep the window accessible')
+                controller.start()
+                if args.gui_test:
+                    import time
+                    result = {'ok': False}
+                    try:
+                        for _ in range(60):
+                            result = window.evaluate_js("({title:document.getElementById('trackingTitle').textContent,buttons:document.querySelectorAll('[data-action]').length,bridge:!!window.pywebview?.api,version:document.getElementById('version').textContent,overflow:document.documentElement.scrollWidth>innerWidth})")
+                            if (result.get('bridge') and __version__ in result.get('version', '')
+                                    and controller.status()['connected'] and (sys.platform != 'win32' or controller.tray)):
+                                result['tray_available'] = controller.tray is not None
+                                result['close_hides'] = controller.closing() is False if controller.tray else None
+                                if controller.tray:
+                                    controller.show()
+                                result['ok'] = not result['overflow'] and result['buttons'] >= 8
+                                break
+                            time.sleep(.5)
+                    finally:
+                        Path(args.gui_test).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+                        controller.quit()
+            try:
+                webview.start(ready, gui="edgechromium" if sys.platform == "win32" else None,
+                              private_mode=False, storage_path=str(data_dir / "companion-webview"),
+                              icon=str(STATIC / "icon.ico"),
+                              localization={"global.cancel": "取消", "global.ok": "确定"})
+            finally:
+                controller.close()
+        logging.info("Companion exited; externally managed services left running")
+        if args.gui_test:
+            return 0 if json.loads(Path(args.gui_test).read_text(encoding='utf-8')).get('ok') else 1
         return 0
     except Exception as exc:
         logging.exception("Desktop startup failed")
-        if args.self_test:
-            Path(args.self_test).write_text(json.dumps({"ok": False, "error": str(exc)},
+        if args.self_test or args.gui_test:
+            Path(args.self_test or args.gui_test).write_text(json.dumps({"ok": False, "error": str(exc)},
                                                        ensure_ascii=False), encoding="utf-8")
         else:
             show_error(exc, data_dir)
